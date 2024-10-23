@@ -12,8 +12,6 @@ import (
 
 // CHAP is the CHAP protocol
 type CHAP struct {
-	peerID   string
-	passwd   string
 	sendChan chan []byte
 	recvChan chan []byte
 	logger   *zerolog.Logger
@@ -24,10 +22,8 @@ type CHAP struct {
 const DefaultTimeout = 10 * time.Second
 
 // NewCHAP creates a new CHAP instance with specified uname,passwd; using pppProto as underlying PPP protocol
-func NewCHAP(uname, passwd string, pppProto *lcp.PPP) *CHAP {
+func NewCHAP(pppProto *lcp.PPP) *CHAP {
 	r := new(CHAP)
-	r.peerID = uname
-	r.passwd = passwd
 	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoCHAP)
 	logger := pppProto.GetLogger().With().Str("Name", "CHAP").Logger()
 	r.logger = &logger
@@ -38,11 +34,15 @@ func NewCHAP(uname, passwd string, pppProto *lcp.PPP) *CHAP {
 func (chap *CHAP) send(p []byte) error {
 	t := time.NewTimer(chap.timeout)
 	defer t.Stop()
-	ppkt := lcp.NewPPPPkt(p, lcp.ProtoCHAP)
+	ppkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(p), lcp.ProtoCHAP).Serialize()
+	if err != nil {
+		return err
+	}
 	select {
 	case <-t.C:
 		return fmt.Errorf("send timeout")
-	case chap.sendChan <- ppkt.Serialize():
+	default:
+		chap.sendChan <- ppkt
 	}
 	return nil
 }
@@ -73,7 +73,7 @@ func (chap *CHAP) getResponse(final bool) (pkt *Pkt, err error) {
 }
 
 // AUTHSelf auth self to peer, return nil if auth succeeds
-func (chap *CHAP) AUTHSelf() error {
+func (chap *CHAP) AuthSelf(ctx context.Context, username, password string) error {
 	challenge, err := chap.getResponse(false)
 	if err != nil {
 		return err
@@ -84,14 +84,14 @@ func (chap *CHAP) AUTHSelf() error {
 	resp.ID = challenge.ID
 
 	h := md5.New()
-	toBuf := append([]byte{challenge.ID}, []byte(chap.passwd)...)
+	toBuf := append([]byte{challenge.ID}, []byte(password)...)
 	toBuf = append(toBuf, challenge.Value...)
-	chap.logger.Debug().Msgf("hashing id %x, passwd %s,challege %x", challenge.ID, chap.passwd, challenge.Value)
+	chap.logger.Debug().Msgf("hashing id %x, passwd %s,challege %x", challenge.ID, password, challenge.Value)
 	h.Write(toBuf)
 	resp.Value = h.Sum(nil)
 	chap.logger.Debug().Msgf("hash value is %x", resp.Value)
 
-	resp.Name = []byte(chap.peerID)
+	resp.Name = []byte(username)
 	b, err := resp.Serialize()
 	if err != nil {
 		return fmt.Errorf("failed to serialize CHAP response,%w", err)

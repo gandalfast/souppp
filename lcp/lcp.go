@@ -256,10 +256,13 @@ func (lcp *LCP) issueRequestID(ctx context.Context) {
 	}
 }
 
-func (lcp *LCP) send(p []byte) (err error) {
-	ppkt := NewPPPPkt(p, lcp.protoType)
-	lcp.sendChan <- ppkt.Serialize()
-	return
+func (lcp *LCP) send(p []byte) error {
+	ppkt, err := NewPPPPkt(NewStaticSerializer(p), lcp.protoType).Serialize()
+	if err != nil {
+		return err
+	}
+	lcp.sendChan <- ppkt
+	return nil
 }
 
 func (lcp *LCP) sendConfReq(ctx context.Context) error {

@@ -140,11 +140,15 @@ func (tif *TUNIF) send(ctx context.Context) {
 		}
 		switch b[0] >> 4 {
 		case 4:
-			pkt := lcp.NewPPPPkt(b[:n], lcp.ProtoIPv4)
-			tif.sendChan <- pkt.Serialize()
+			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(b[:n]), lcp.ProtoIPv4).Serialize()
+			if err == nil {
+				tif.sendChan <- pkt
+			}
 		case 6:
-			pkt := lcp.NewPPPPkt(b[:n], lcp.ProtoIPv6)
-			tif.sendChan <- pkt.Serialize()
+			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(b[:n]), lcp.ProtoIPv6).Serialize()
+			if err == nil {
+				tif.sendChan <- pkt
+			}
 		default:
 			continue
 		}

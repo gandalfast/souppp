@@ -12,33 +12,37 @@ import (
 	"time"
 )
 
-// PPPPkt is the PPP packet
-type PPPPkt struct {
+// PPPPacket is the PPP packet
+type PPPPacket struct {
 	Proto   PPPProtocolNumber
-	Payload []byte
+	Payload Serializer
 }
 
 // Serialize into bytes, without copying, and no padding
-func (ppppkt *PPPPkt) Serialize() []byte {
+func (pppPkt *PPPPacket) Serialize() ([]byte, error) {
 	buf := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf, uint16(ppppkt.Proto))
-	return append(buf, ppppkt.Payload...)
+	binary.BigEndian.PutUint16(buf, uint16(pppPkt.Proto))
+	body, err := pppPkt.Payload.Serialize()
+	if err != nil {
+		return nil, err
+	}
+	return append(buf, body...), nil
 }
 
-// Parse buf into PPPPkt
-func (ppppkt *PPPPkt) Parse(buf []byte) error {
+// Parse buf into PPPPacket
+func (pppPkt *PPPPacket) Parse(buf []byte) error {
 	if len(buf) <= 2 {
 		return fmt.Errorf("invalid PPP packet length %d", len(buf))
 	}
-	ppppkt.Proto = PPPProtocolNumber(binary.BigEndian.Uint16(buf[:2]))
-	ppppkt.Payload = buf[2:]
+	pppPkt.Proto = PPPProtocolNumber(binary.BigEndian.Uint16(buf[:2]))
+	pppPkt.Payload = NewStaticSerializer(buf[2:])
 	return nil
 }
 
-// NewPPPPkt return a new PPPPkt with proto and payload
-func NewPPPPkt(payload []byte, proto PPPProtocolNumber) *PPPPkt {
-	r := new(PPPPkt)
-	r.Payload = payload
+// NewPPPPkt return a new PPPPacket with proto and payload
+func NewPPPPkt(data Serializer, proto PPPProtocolNumber) *PPPPacket {
+	r := new(PPPPacket)
+	r.Payload = data
 	r.Proto = proto
 	return r
 }
@@ -148,10 +152,9 @@ func (ppp *PPP) sendProtocolRejct(b []byte) {
 	ppp.reqID++
 	pkt.ID = ppp.reqID
 	pkt.Payload = append(proto, b...)
-	pktbytes, err := pkt.Serialize()
+	pktbytes, err := NewPPPPkt(pkt, ProtoLCP).Serialize()
 	if err == nil {
-		ppppkt := NewPPPPkt(pktbytes, ProtoLCP)
-		ppp.sendChan <- ppppkt.Serialize()
+		ppp.sendChan <- pktbytes
 	}
 	ppp.logger.Debug().Any("packet", pkt).Msg("send protocol reject")
 }

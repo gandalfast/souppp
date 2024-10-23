@@ -1,8 +1,6 @@
 package pap
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // Code is the PAP msg code
 type Code uint8

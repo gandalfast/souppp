@@ -2,93 +2,94 @@
 package pap
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"github.com/gandalfast/zouppp/lcp"
 	"github.com/rs/zerolog"
 	"time"
 )
 
-// PAP is the PAP protocol
+// PAP is the PAP protocol implementation
 type PAP struct {
-	peerID   string
-	passwd   string
-	sendChan chan []byte
-	recvChan chan []byte
-	logger   *zerolog.Logger
-	timeout  time.Duration
-	retry    int
-	reqID    uint8
+	logger    *zerolog.Logger
+	sendChan  chan []byte
+	recvChan  chan []byte
+	requestID uint8
 }
 
 const (
-	// DefaultTimeout is the default timeout for PAP
-	DefaultTimeout = 5 * time.Second
-	// DefaultRetry is the default retry for PAP
-	DefaultRetry = 3
+	_defaultTimeout     = 4 * time.Second
+	_defaultRetryNumber = 3
 )
 
-// NewPAP creates a new PAP instance with uname, passwd;
+// NewPAP creates a new PAP instance with uname, Password;
 // uses pppProtol as the underlying PPP protocol;
-func NewPAP(uname, passwd string, pppProto *lcp.PPP) *PAP {
+func NewPAP(pppProto *lcp.PPP) *PAP {
 	r := new(PAP)
-	r.peerID = uname
-	r.passwd = passwd
 	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoPAP)
 	logger := pppProto.GetLogger().With().Str("Name", "PAP").Logger()
 	r.logger = &logger
-	r.timeout = DefaultTimeout
-	r.retry = DefaultRetry
 	return r
 }
 
-func (pap *PAP) getResponse(req *Pkt) (*Pkt, error) {
-	var t *time.Timer
-	resp := new(Pkt)
-	for i := 0; i < pap.retry; i++ {
-		pap.reqID++
-		req.ID = pap.reqID
-		pktbytes, err := req.Serialize()
+func (pap *PAP) getResponse(ctx context.Context, req Packet) (resp Packet, err error) {
+	for i := 0; i < _defaultRetryNumber; i++ {
+		// Increase request ID counter
+		pap.requestID++
+		req.ID = pap.requestID
+
+		// Send request
+		pppData, err := lcp.NewPPPPkt(&req, lcp.ProtoPAP).Serialize()
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
-		ppkt := lcp.NewPPPPkt(pktbytes, lcp.ProtoPAP)
-		pap.sendChan <- ppkt.Serialize()
+		pap.sendChan <- pppData
 		pap.logger.Debug().Any("req", req).Msg("sent PAP auth request")
-		if t == nil {
-			t = time.NewTimer(pap.timeout)
-		}
-		t.Reset(pap.timeout)
-		select {
-		case <-t.C:
-		case rcvdbytes := <-pap.recvChan:
-			err := resp.Parse(rcvdbytes)
-			if err != nil {
-				pap.logger.Warn().Err(err).Msg("got invalid PAP response")
-				continue
+
+		// Parse response
+		resp, err = func(resp Packet) (Packet, error) {
+			ctx, cancel := context.WithTimeout(ctx, _defaultTimeout)
+			defer cancel()
+
+			select {
+			case <-ctx.Done():
+				// Retry to send authentication request in the next retry
+				return resp, ctx.Err()
+			case responseBytes := <-pap.recvChan:
+				if err := resp.Parse(responseBytes); err != nil {
+					pap.logger.Warn().Err(err).Msg("got invalid PAP response")
+					return resp, err
+				}
+				if resp.Code != CodeAuthACK && resp.Code != CodeAuthNAK {
+					pap.logger.Warn().Uint8("code", uint8(resp.Code)).Msg("got a PAP non-response")
+					return resp, errors.New("got a PAP non-response")
+				}
+
+				// Response is valid
+				pap.logger.Debug().Any("resp", resp).Msg("got PAP response")
+				return resp, nil
 			}
-			if resp.Code != CodeAuthACK && resp.Code != CodeAuthNAK {
-				pap.logger.Warn().Uint8("code", uint8(resp.Code)).Msg("got a PAP non-response")
-				continue
-			}
-			pap.logger.Debug().Any("resp", resp).Msg("got PAP response")
+		}(resp)
+		if err == nil {
 			return resp, nil
 		}
 	}
-	return nil, fmt.Errorf("timeout")
+	return resp, AuthenticationTimeout
 }
 
-// AuthSelf autnenticate self to the peer
-func (pap *PAP) AuthSelf() error {
-	req := new(Pkt)
-	req.Code = CodeAuthRequest
-	req.PeerID = []byte(pap.peerID)
-	req.Passwd = []byte(pap.passwd)
-	resp, err := pap.getResponse(req)
+func (pap *PAP) AuthSelf(ctx context.Context, username, password string) error {
+	resp, err := pap.getResponse(ctx, Packet{
+		Code:     CodeAuthRequest,
+		PeerID:   []byte(username),
+		Password: []byte(password),
+	})
 	if err != nil {
 		return err
 	}
-	if resp.Code == CodeAuthACK {
-		return nil
+
+	if resp.Code != CodeAuthACK {
+		return AuthenticationFailed
 	}
-	return fmt.Errorf("auth failed")
+
+	return nil
 }
