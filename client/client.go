@@ -4,6 +4,9 @@ package client
 import (
 	"context"
 	"fmt"
+	"github.com/gandalfast/zouppp/auth/chap"
+	"github.com/gandalfast/zouppp/auth/pap"
+	"github.com/gandalfast/zouppp/myaddr"
 	"math/big"
 	"net"
 	"strings"
@@ -11,15 +14,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gandalfast/zouppp/chap"
 	"github.com/gandalfast/zouppp/datapath"
 	"github.com/gandalfast/zouppp/lcp"
-	"github.com/gandalfast/zouppp/pap"
 	"github.com/gandalfast/zouppp/pppoe"
 	"github.com/insomniacslk/dhcp/dhcpv6"
 
 	"github.com/hujun-open/etherconn"
-	"github.com/hujun-open/myaddr"
 	"github.com/hujun-open/mywg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
