@@ -1,8 +1,6 @@
 package pap
 
-import (
-	"encoding/binary"
-)
+import "encoding/binary"
 
 // Packet represents a PAP packet
 type Packet struct {
@@ -53,6 +51,7 @@ func (pp *Packet) Parse(buf []byte) error {
 		}
 		pp.Msg = buf[5:]
 	}
+
 	return nil
 }
 
@@ -87,11 +86,12 @@ func (pp *Packet) Serialize() ([]byte, error) {
 		buf = append(buf, pp.Msg...)
 	}
 
-	if len(buf) > 65535 {
+	length := len(buf)
+	if length > 65535 {
 		return nil, InvalidPacketLengthError{
-			length: len(buf),
+			length: length,
 		}
 	}
-	binary.BigEndian.PutUint16(buf[2:4], uint16(len(buf)))
+	binary.BigEndian.PutUint16(buf[2:4], uint16(length))
 	return buf, nil
 }

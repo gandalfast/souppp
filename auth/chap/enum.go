@@ -1,8 +1,6 @@
 package chap
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // Code is the code of CHAP msg
 type Code uint8
@@ -26,6 +24,7 @@ func (c Code) String() string {
 		return "Success"
 	case CodeFailure:
 		return "Failure"
+	default:
+		return fmt.Sprintf("unknown (%d)", uint8(c))
 	}
-	return fmt.Sprintf("unknown (%d)", uint8(c))
 }

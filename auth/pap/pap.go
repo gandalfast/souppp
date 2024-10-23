@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	_defaultTimeout     = 4 * time.Second
+	_defaultRetryNumber = 3
+)
+
 // PAP is the PAP protocol implementation
 type PAP struct {
 	logger    *zerolog.Logger
@@ -16,11 +21,6 @@ type PAP struct {
 	recvChan  chan []byte
 	requestID uint8
 }
-
-const (
-	_defaultTimeout     = 4 * time.Second
-	_defaultRetryNumber = 3
-)
 
 // NewPAP creates a new PAP instance with uname, Password;
 // uses pppProtol as the underlying PPP protocol;
