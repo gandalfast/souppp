@@ -1,16 +1,15 @@
-//Package lcp implements PPP, LCP, IPCP and IPv6CP
+// Package lcp implements PPP, LCP, IPCP and IPv6CP
 package lcp
 
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog"
 	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // LayerNotifyHandler is the handler function to handle Layer event (tlu/tld/tls/tlf as defined in RFC1661)
@@ -33,7 +32,7 @@ type LCP struct {
 	requestIDChan         chan uint8
 	requestID             uint8
 	reqiestIDLock         *sync.RWMutex
-	logger                *zap.Logger
+	logger                *zerolog.Logger
 	// OwnRule is the OwnOptionRule to handle own options
 	OwnRule OwnOptionRule
 	// PeerRule is the PeerOptionRule to handle peer's options
@@ -56,16 +55,14 @@ const (
 	DefaultMagicNum LCPOpMagicNum = 0
 )
 
-func newOwnDefaultOptions() (r Options) {
+func newOwnDefaultOptions() Options {
 	defaultMRUOp := LCPOpMRU(DefaultMRU)
 	magicNum := LCPOpMagicNum(rand.Uint32())
 
-	r = Options{
+	return Options{
 		&defaultMRUOp,
 		&magicNum,
-		// &defaultAuthProto,
 	}
-	return
 }
 
 // NewLCP creates a new LCP/IPCP/IPv6CP according to the specific proto, runs over specified pppProto, calls h whenever there is layer event.
@@ -78,14 +75,14 @@ func NewLCP(ctx context.Context, proto PPPProtocolNumber, pppProto *PPP, h Layer
 	lcp.maxRestart = DefaultRestartCounter
 	lcp.restartCount = new(uint32)
 	atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-	// lcp.currentOwnOptions = newDefaultOptions()
 	lcp.OwnRule = NewDefaultOwnOptionRule()
 	lcp.restartTimerDuration = DefaultRestartTimerDuration
 	lcp.keepAliveInterval = DefaultKeepAliveInterval
 	lcp.PeerRule, _ = NewDefaultPeerOptionRule(DefaultAuthProto)
 	lcp.requestIDChan = make(chan uint8)
 	lcp.reqiestIDLock = new(sync.RWMutex)
-	lcp.logger = pppProto.GetLogger().Named(lcp.protoType.String())
+	logger := pppProto.GetLogger().With().Str("LCPProto", lcp.protoType.String()).Logger()
+	lcp.logger = &logger
 	lcp.sendChan, lcp.recvChan = pppProto.Register(lcp.protoType)
 	lcp.layerNotify = h
 	for _, mod := range mods {
@@ -238,7 +235,7 @@ func (lcp *LCP) setState(s State) {
 	atomic.StoreUint32(lcp.state, uint32(s))
 	_, callername, linenum := getCallerName()
 
-	lcp.logger.Sugar().Debugf("%v:%v state transit %v -> %v", callername, linenum, old, s)
+	lcp.logger.Debug().Msgf("%v:%v state transit %v -> %v", callername, linenum, old, s)
 }
 
 func (lcp *LCP) getState() State {
@@ -253,21 +250,15 @@ func (lcp *LCP) issueRequestID(ctx context.Context) {
 			lcp.requestID++
 			lcp.reqiestIDLock.Unlock()
 		case <-ctx.Done():
-			lcp.logger.Info("issueRequestID routine stopped")
+			lcp.logger.Info().Msg("issueRequestID routine stopped")
 			return
 		}
-
 	}
 }
-
-// func (lcp *LCP) layerNotify(notify int) {
-
-// }
 
 func (lcp *LCP) send(p []byte) (err error) {
 	ppkt := NewPPPPkt(p, lcp.protoType)
 	lcp.sendChan <- ppkt.Serialize()
-	// lcp.logger.Sugar().Debugf("send a pkt, current state is %v", lcp.getState())
 	return
 }
 
@@ -280,8 +271,7 @@ func (lcp *LCP) sendConfReq(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending conf-req")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending conf-req")
 	defer lcp.resetTimer(ctx)
 	return lcp.send(lcpbytes)
 }
@@ -294,8 +284,7 @@ func (lcp *LCP) sendTermReq(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending term-req")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending term-req")
 	defer lcp.resetTimer(ctx)
 	return lcp.send(lcpbytes)
 }
@@ -308,8 +297,7 @@ func (lcp *LCP) sendTermACK(req *Pkt) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending term-ack")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending term-ack")
 	return lcp.send(lcpbytes)
 }
 func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
@@ -327,9 +315,9 @@ func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
 		if err != nil {
 			return
 		}
-		lcp.logger.Info("sending conf-nak")
-		lcp.logger.Debug("\n" + lcppkt.String())
+		lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending conf-nak")
 	}
+
 	if len(reject) > 0 {
 		lcppkt := NewPkt(lcp.protoType)
 		lcppkt.Code = CodeConfigureReject
@@ -343,9 +331,9 @@ func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
 		if err != nil {
 			return
 		}
-		lcp.logger.Info("sending conf-reject")
-		lcp.logger.Debug("\n" + lcppkt.String())
+		lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending conf-reject")
 	}
+
 	return
 }
 
@@ -353,23 +341,17 @@ func (lcp *LCP) sendConfACK(req *Pkt) error {
 	lcppkt := NewPkt(lcp.protoType)
 	lcppkt.Code = CodeConfigureAck
 	lcppkt.ID = req.ID
-	// for _, o := range req.Options {
-	// 	if o.Type() != OpTypeMagicNumber {
-	// 		lcppkt.Options = append(lcppkt.Options, o)
-	// 	}
-	// }
 	lcppkt.Options = req.Options
 	lcpbytes, err := lcppkt.Serialize()
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending conf-ack")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending conf-ack")
 	return lcp.send(lcpbytes)
 }
 
 func (lcp *LCP) resetKeepAliveTimer(ctx context.Context) {
-	lcp.logger.Debug("reset keepalive timer")
+	lcp.logger.Debug().Msg("reset keepalive timer")
 	if lcp.protoType != ProtoLCP {
 		return
 	}
@@ -392,7 +374,7 @@ func (lcp *LCP) resetKeepAliveTimer(ctx context.Context) {
 }
 
 func (lcp *LCP) resetTimer(ctx context.Context) {
-	lcp.logger.Debug("reset timer")
+	lcp.logger.Debug().Msg("reset timer")
 	if lcp.restartTimer == nil {
 		lcp.restartTimer = time.NewTimer(lcp.restartTimerDuration)
 	} else {
@@ -417,12 +399,11 @@ func (lcp *LCP) keepAliveTimeout(ctx context.Context) {
 	case StateOpened:
 		err := lcp.sendEchoRequest(ctx)
 		if err != nil {
-			lcp.logger.Error(err.Error())
+			lcp.logger.Error().Err(err).Msg("keepAliveTimeout")
 			return
 		}
 		lcp.setState(StateEchoReqSent)
 	}
-
 }
 
 // Timeout event, called by lcp.resetTimer()
@@ -430,7 +411,7 @@ func (lcp *LCP) timeout(ctx context.Context) {
 	defer atomic.AddUint32(lcp.restartCount, ^uint32(0))
 	if atomic.LoadUint32(lcp.restartCount) == 0 {
 		if atomic.LoadUint32(lcp.state) == uint32(StateEchoReqSent) {
-			lcp.logger.Error("keepalive timeout")
+			lcp.logger.Error().Msg("keepalive timeout")
 		}
 		lcp.toMinus(ctx)
 	}
@@ -439,7 +420,7 @@ func (lcp *LCP) timeout(ctx context.Context) {
 
 // toPlus is TO+ event
 func (lcp *LCP) toPlus(ctx context.Context) {
-	lcp.logger.Debug("timer expired, TO+ event")
+	lcp.logger.Debug().Msg("timer expired, TO+ event")
 	var err error
 	switch lcp.getState() {
 	case StateClosing, StateStopping:
@@ -459,13 +440,13 @@ func (lcp *LCP) toPlus(ctx context.Context) {
 		err = lcp.sendEchoRequest(ctx)
 	}
 	if err != nil {
-		lcp.logger.Sugar().Errorf("failed to process TO+ event,%v", err)
+		lcp.logger.Error().Err(err).Msg("failed to process TO+ event")
 	}
 }
 
 // toMinus is TO- event
 func (lcp *LCP) toMinus(ctx context.Context) {
-	lcp.logger.Debug("timer expired, TO- event")
+	lcp.logger.Debug().Msg("timer expired, TO- event")
 	switch lcp.getState() {
 	case StateClosing:
 		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
@@ -479,72 +460,63 @@ func (lcp *LCP) toMinus(ctx context.Context) {
 	}
 }
 
-const (
-	readTimeout = 3 * time.Second
-)
+const readTimeout = 3 * time.Second
 
 func (lcp *LCP) processRecvByte(ctx context.Context, pktbytes []byte) {
-
 	if len(pktbytes) < 4 {
-		lcp.logger.Warn("recvd LCP pkt too small")
+		lcp.logger.Warn().Msg("recvd LCP pkt too small")
 		return
 	}
 	pkt := NewPkt(lcp.protoType)
 	err := pkt.Parse(pktbytes)
 	if err != nil {
-		lcp.logger.Sugar().Warnf("invalid LCP pkt,%v", err)
+		lcp.logger.Warn().Err(err).Msg("invalid LCP pkt")
 		return
 	}
-	lcp.logger.Sugar().Infof("got a %v lcp pkt ", pkt.Code.String())
-	lcp.logger.Debug("\n" + pkt.String())
+	lcp.logger.Info().Str("pkt", pkt.String()).Msg("got a lcp pkt")
+
 	switch pkt.Code {
 	case CodeConfigureAck:
-		err = lcp.rca(ctx, pkt)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RCA event,%v", err)
+		if err := lcp.rca(ctx, pkt); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to process RCA event")
 		}
 	case CodeConfigureRequest:
 		nak, reject := lcp.PeerRule.HandlerConfReq(pkt.Options)
 		if len(nak) == 0 && len(reject) == 0 {
 			err = lcp.rcrPlus(ctx, pkt)
 			if err != nil {
-				lcp.logger.Sugar().Errorf("failed to process RCR+ event,%v", err)
+				lcp.logger.Error().Err(err).Msg("failed to process RCR+ event")
 			}
 			return
 		}
 		err = lcp.rcrMinus(ctx, pkt, nak, reject)
 		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RCR event,%v", err)
+			lcp.logger.Error().Err(err).Msg("failed to process RCR event")
 		}
 	case CodeEchoReply, CodeEchoRequest, CodeDiscardRequest:
 		err = lcp.rxr(ctx, pkt)
 		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RXR event,%v", err)
+			lcp.logger.Error().Err(err).Msg("failed to process RXR event")
 		}
 	case CodeTerminateRequest:
-		err = lcp.rtr(ctx, pkt)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RTR event,%v", err)
+		if err := lcp.rtr(ctx, pkt); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to process RTR event")
 		}
 	case CodeTerminateAck:
-		err = lcp.rta(ctx)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RTA event,%v", err)
+		if err := lcp.rta(ctx); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to process RTA event")
 		}
 	case CodeConfigureNak, CodeConfigureReject:
-		err = lcp.rcn(ctx, pkt)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RCN event,%v", err)
+		if err := lcp.rcn(ctx, pkt); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to process RCN event")
 		}
 	case CodeCodeReject, CodeProtocolReject:
-		err = lcp.rxjMinus(ctx, pkt)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process RXJ event,%v", err)
+		if err := lcp.rxjMinus(ctx, pkt); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to process RXJ event")
 		}
 	default:
-		err = lcp.ruc(pkt)
-		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to handle RUC event,%v", err)
+		if err := lcp.ruc(pkt); err != nil {
+			lcp.logger.Error().Err(err).Msg("failed to handle RUC event")
 		}
 	}
 }
@@ -557,10 +529,9 @@ func (lcp *LCP) recv(ctx context.Context) {
 		case pktbytes := <-lcp.recvChan:
 			lcp.processRecvByte(ctx, pktbytes)
 		case <-ctx.Done():
-			lcp.logger.Info("recv routine stopped")
+			lcp.logger.Info().Msg("recv routine stopped")
 			return
 		}
-
 	}
 }
 
@@ -698,7 +669,7 @@ func (lcp *LCP) rca(ctx context.Context, req *Pkt) (err error) {
 	return
 }
 
-//RCN event
+// RCN event
 func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 	switch req.Code {
 	case CodeConfigureNak:
@@ -743,7 +714,7 @@ func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 	return nil
 }
 
-//PTR event
+// PTR event
 func (lcp *LCP) rtr(ctx context.Context, req *Pkt) (err error) {
 	switch lcp.getState() {
 	case StateClosed, StateStopped, StateClosing, StateStopping:
@@ -772,7 +743,7 @@ func (lcp *LCP) rtr(ctx context.Context, req *Pkt) (err error) {
 
 // RTA event
 func (lcp *LCP) rta(ctx context.Context) error {
-	lcp.logger.Debug("RTA (receive term-ack) event")
+	lcp.logger.Debug().Msg("RTA (receive term-ack) event")
 	switch lcp.getState() {
 	case StateClosing:
 		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
@@ -814,7 +785,7 @@ func (lcp *LCP) sendCodeReject(req *Pkt) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Sugar().Debugf("sending code-reject\n%v", pkt)
+	lcp.logger.Debug().Any("pkt", pkt.String()).Msg("sending code-reject")
 	return lcp.send(pktbytes)
 }
 
@@ -828,7 +799,7 @@ func (lcp *LCP) rxjPlus() {
 
 // rxjMnius is RXJ- event
 func (lcp *LCP) rxjMinus(ctx context.Context, req *Pkt) error {
-	lcp.logger.Sugar().Errorf("Got a %v pkt", req.Code)
+	lcp.logger.Error().Msgf("Got a %v pkt", req.Code)
 	switch lcp.getState() {
 	case StateStopped, StateClosed:
 		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
@@ -864,11 +835,9 @@ func (lcp *LCP) sendEchoRequest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending echo-request")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Str("lcp", lcppkt.String()).Msg("sending echo-request")
 	defer lcp.resetTimer(ctx)
 	return lcp.send(lcpbytes)
-
 }
 
 func (lcp *LCP) sendEchoReply(req *Pkt) error {
@@ -884,8 +853,8 @@ func (lcp *LCP) sendEchoReply(req *Pkt) error {
 	if err != nil {
 		return err
 	}
-	lcp.logger.Info("sending echo-reply")
-	lcp.logger.Debug("\n" + lcppkt.String())
+	lcp.logger.Info().Msg("sending echo-reply")
+	lcp.logger.Debug().Msg(lcppkt.String())
 	return lcp.send(lcpbytes)
 }
 
@@ -972,7 +941,7 @@ func (lcp *LCP) Close(ctx context.Context) {
 		// send term req
 		err := lcp.sendTermReq(ctx)
 		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process TO+ event,err", err)
+			lcp.logger.Error().Err(err).Msg("failed to process TO+ event")
 			return
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
@@ -982,7 +951,7 @@ func (lcp *LCP) Close(ctx context.Context) {
 		//send term req
 		err := lcp.sendTermReq(ctx)
 		if err != nil {
-			lcp.logger.Sugar().Errorf("failed to process TO+ event,err", err)
+			lcp.logger.Error().Err(err).Msg("failed to process TO+ event")
 			return
 		}
 		lcp.layerNotify(ctx, LCPLayerNotifyDown)

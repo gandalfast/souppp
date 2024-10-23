@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/hujun-open/etherconn"
 	"net"
 	"sync"
 	"time"
-
-	"github.com/hujun-open/etherconn"
 )
 
 // pppAddr implements net.Addr interface
@@ -57,7 +56,7 @@ func NewPPPConn(ctx context.Context, ppp *PPP, proto PPPProtocolNumber) *PPPConn
 	return r
 }
 
-//pkt is an IPv4 or IPv6 pkt
+// pkt is an IPv4 or IPv6 pkt
 func parseIPPkt(pkt []byte) (*etherconn.RelayReceival, error) {
 	var l4index int
 	rcv := new(etherconn.RelayReceival)
@@ -126,12 +125,12 @@ func (pconn *PPPConn) recvHandling(ctx context.Context) {
 	}
 }
 
-//Register implements etherconn.SharedEconn interface
+// Register implements etherconn.SharedEconn interface
 func (pconn *PPPConn) Register(k etherconn.L4RecvKey) (torecvch chan *etherconn.RelayReceival) {
 	return pconn.RegisterList([]etherconn.L4RecvKey{k})
 }
 
-//RegisterList register a list of keys
+// RegisterList register a list of keys
 func (pconn *PPPConn) RegisterList(keys []etherconn.L4RecvKey) (torecvch chan *etherconn.RelayReceival) {
 	ch := make(chan *etherconn.RelayReceival, pconn.perClntRecvChanDepth)
 	list := make([]interface{}, len(keys))
@@ -142,7 +141,7 @@ func (pconn *PPPConn) RegisterList(keys []etherconn.L4RecvKey) (torecvch chan *e
 	return ch
 }
 
-//WriteIPPktTo implements etherconn.SharedEconn interface, dstmac is not used
+// WriteIPPktTo implements etherconn.SharedEconn interface, dstmac is not used
 func (pconn *PPPConn) WriteIPPktTo(p []byte, dstmac net.HardwareAddr) (int, error) {
 	pconn.writeDeadlineLock.RLock()
 	deadline := pconn.writeDeadline

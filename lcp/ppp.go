@@ -5,12 +5,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/hujun-open/etherconn"
+	"github.com/rs/zerolog"
 	"net"
 	"sync"
 	"time"
-
-	"github.com/hujun-open/etherconn"
-	"go.uber.org/zap"
 )
 
 // PPPPkt is the PPP packet
@@ -50,12 +49,12 @@ type PPP struct {
 	sendChan          chan []byte
 	relayChanListLock *sync.RWMutex
 	conn              net.PacketConn
-	logger            *zap.Logger
+	logger            *zerolog.Logger
 	reqID             uint8 //used by send project-reject
 }
 
 // NewPPP creates a new PPP protocol instance, using conn as underlying transport, l as logger;
-func NewPPP(ctx context.Context, conn net.PacketConn, l *zap.Logger) *PPP {
+func NewPPP(ctx context.Context, conn net.PacketConn, l *zerolog.Logger) *PPP {
 	r := new(PPP)
 	r.relayChanList = make(map[PPPProtocolNumber]chan []byte)
 	r.relayChanListLock = new(sync.RWMutex)
@@ -95,7 +94,7 @@ func (ppp *PPP) UnRegister(p PPPProtocolNumber) {
 }
 
 // GetLogger return the logger
-func (ppp *PPP) GetLogger() *zap.Logger {
+func (ppp *PPP) GetLogger() *zerolog.Logger {
 	return ppp.logger
 }
 
@@ -103,38 +102,35 @@ func (ppp *PPP) send(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			ppp.logger.Info("ppp send routined stopped")
+			ppp.logger.Info().Msg("ppp send routined stopped")
 			return
 		case b := <-ppp.sendChan:
-			_, err := ppp.conn.WriteTo(b, nil)
-			if err != nil {
-				ppp.logger.Sugar().Warnf("failed to send pkt,%v", err)
+			if _, err := ppp.conn.WriteTo(b, nil); err != nil {
+				ppp.logger.Warn().Err(err).Msg("failed to send pkt")
 			}
 		}
 	}
-
 }
 
 func (ppp *PPP) recv(ctx context.Context) {
-	var err error
-	var n int
 	for {
 		buf := make([]byte, MaxPPPMsgSize)
 		ppp.conn.SetReadDeadline(time.Now().Add(readTimeout))
-		n, _, err = ppp.conn.ReadFrom(buf)
-		if err != nil {
-			if errors.Is(err, etherconn.ErrTimeOut) {
-				select {
-				case <-ctx.Done():
-					ppp.logger.Info("ppp recv routined stopped")
-					return
-				default:
-				}
-				continue
-			}
-			ppp.logger.Sugar().Errorf("failed to recv,%v", err)
+		n, _, err := ppp.conn.ReadFrom(buf)
+
+		if err != nil && !errors.Is(err, etherconn.ErrTimeOut) {
+			ppp.logger.Error().Err(err).Msg("failed to recv")
 			return
+		} else if err != nil {
+			select {
+			case <-ctx.Done():
+				ppp.logger.Info().Msg("ppp recv routined stopped")
+				return
+			default:
+			}
+			continue
 		}
+
 		go ppp.relay(buf[:n])
 	}
 }
@@ -157,7 +153,7 @@ func (ppp *PPP) sendProtocolRejct(b []byte) {
 		ppppkt := NewPPPPkt(pktbytes, ProtoLCP)
 		ppp.sendChan <- ppppkt.Serialize()
 	}
-	ppp.logger.Sugar().Debugf("send protocol reject:\n%v", pkt)
+	ppp.logger.Debug().Any("packet", pkt).Msg("send protocol reject")
 }
 
 func (ppp *PPP) relay(buf []byte) {

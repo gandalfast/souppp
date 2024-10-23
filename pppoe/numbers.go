@@ -11,7 +11,7 @@ const (
 	pppoeVerType byte = 0x11
 )
 
-// list of PPPoE msg code
+// List of PPPoE msg code
 const (
 	CodeSession Code = 0
 	CodePADO    Code = 7

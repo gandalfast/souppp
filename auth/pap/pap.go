@@ -3,11 +3,9 @@ package pap
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/gandalfast/zouppp/lcp"
-
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
+	"time"
 )
 
 // PAP is the PAP protocol
@@ -16,7 +14,7 @@ type PAP struct {
 	passwd   string
 	sendChan chan []byte
 	recvChan chan []byte
-	logger   *zap.Logger
+	logger   *zerolog.Logger
 	timeout  time.Duration
 	retry    int
 	reqID    uint8
@@ -36,7 +34,8 @@ func NewPAP(uname, passwd string, pppProto *lcp.PPP) *PAP {
 	r.peerID = uname
 	r.passwd = passwd
 	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoPAP)
-	r.logger = pppProto.GetLogger().Named("PAP")
+	logger := pppProto.GetLogger().With().Str("Name", "PAP").Logger()
+	r.logger = &logger
 	r.timeout = DefaultTimeout
 	r.retry = DefaultRetry
 	return r
@@ -54,7 +53,7 @@ func (pap *PAP) getResponse(req *Pkt) (*Pkt, error) {
 		}
 		ppkt := lcp.NewPPPPkt(pktbytes, lcp.ProtoPAP)
 		pap.sendChan <- ppkt.Serialize()
-		pap.logger.Sugar().Debugf("sent PAP auth request:\n%v", req)
+		pap.logger.Debug().Any("req", req).Msg("sent PAP auth request")
 		if t == nil {
 			t = time.NewTimer(pap.timeout)
 		}
@@ -64,14 +63,14 @@ func (pap *PAP) getResponse(req *Pkt) (*Pkt, error) {
 		case rcvdbytes := <-pap.recvChan:
 			err := resp.Parse(rcvdbytes)
 			if err != nil {
-				pap.logger.Sugar().Warnf("got a invalid PAP response, %v", err)
+				pap.logger.Warn().Err(err).Msg("got invalid PAP response")
 				continue
 			}
 			if resp.Code != CodeAuthACK && resp.Code != CodeAuthNAK {
-				pap.logger.Sugar().Warnf("got a PAP non-response, %v", resp.Code)
+				pap.logger.Warn().Uint8("code", uint8(resp.Code)).Msg("got a PAP non-response")
 				continue
 			}
-			pap.logger.Sugar().Debugf("got PAP response\n%v", resp)
+			pap.logger.Debug().Any("resp", resp).Msg("got PAP response")
 			return resp, nil
 		}
 	}

@@ -6,23 +6,21 @@ import (
 	"fmt"
 	"github.com/gandalfast/zouppp/auth/chap"
 	"github.com/gandalfast/zouppp/auth/pap"
+	"github.com/gandalfast/zouppp/datapath"
+	"github.com/gandalfast/zouppp/lcp"
 	"github.com/gandalfast/zouppp/myaddr"
+	"github.com/gandalfast/zouppp/mywg"
+	"github.com/gandalfast/zouppp/pppoe"
+	"github.com/hujun-open/etherconn"
+	"github.com/insomniacslk/dhcp/dhcpv6"
+	"github.com/rs/zerolog"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/gandalfast/zouppp/datapath"
-	"github.com/gandalfast/zouppp/lcp"
-	"github.com/gandalfast/zouppp/pppoe"
-	"github.com/insomniacslk/dhcp/dhcpv6"
-
-	"github.com/hujun-open/etherconn"
-	"github.com/hujun-open/mywg"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // VarName is the placeholder in PPPIfName/RID/CID/UserName/Password of Setup that will be replaced by client id
@@ -75,7 +73,7 @@ type ZouPPP struct {
 	lcpProto          *lcp.LCP
 	ipcpProto         *lcp.LCP
 	ipv6cpProto       *lcp.LCP
-	logger            *zap.Logger
+	logger            *zerolog.Logger
 	ncpWG             *mywg.MyWG
 	dialWG            *sync.WaitGroup
 	onceDoneDialWG    *sync.Once
@@ -96,7 +94,10 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 	options ...ZouPPPModifier) (zou *ZouPPP, err error) {
 	zou = new(ZouPPP)
 	zou.cfg = cfg
-	zou.logger = cfg.setup.logger.Named(econn.LocalAddr().String())
+
+	logger := cfg.setup.logger.With().Str("ETH", econn.LocalAddr().String()).Logger()
+	zou.logger = &logger
+
 	taglist := []pppoe.Tag{pppoe.NewSvcTag("")}
 	if cfg.CID != "" || cfg.RID != "" {
 		taglist = append(taglist, pppoe.NewCircuitRemoteIDTag(cfg.CID, cfg.RID))
@@ -108,15 +109,6 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 		return nil, err
 	}
 	zou.ncpWG = mywg.NewMyWG()
-	// if zou.cfg.setup.IPv4 {
-	// 	zou.ncpWG.Add(1)
-	// }
-	// if zou.cfg.setup.IPv6 {
-	// 	zou.ncpWG.Add(1)
-	// }
-	// if zou.cfg.setup.DHCPv6IANA || zou.cfg.setup.DHCPv6IAPD {
-	// 	zou.ncpWG.Add(1)
-	// }
 	zou.onceSendResult = new(sync.Once)
 	zou.result = new(DialResult)
 	zou.result.R = ResultFailure
@@ -178,20 +170,20 @@ func (zou *ZouPPP) Dial(ctx context.Context) {
 	childctx, zou.cancelFunc = context.WithCancel(ctx)
 	err := zou.pppoeProto.Dial(childctx)
 	if err != nil {
-		zou.logger.Error(err.Error())
+		zou.logger.Error().Err(err).Msg("")
 		return
 	}
-	zou.logger.Info("pppoe open")
+	zou.logger.Info().Msg("pppoe open")
 	zou.pppProto = lcp.NewPPP(childctx, zou.pppoeProto, zou.pppoeProto.GetLogger())
 	defPeerRule, err := lcp.NewDefaultPeerOptionRule(zou.cfg.setup.AuthProto)
 	if err != nil {
-		zou.logger.Error(err.Error())
+		zou.logger.Error().Err(err).Msg("")
 		return
 	}
 	zou.lcpProto = lcp.NewLCP(childctx, lcp.ProtoLCP, zou.pppProto, zou.lcpEvtHandler, lcp.WithPeerOptionRule(defPeerRule))
 	err = zou.lcpProto.Open(childctx)
 	if err != nil {
-		zou.logger.Error(err.Error())
+		zou.logger.Error().Err(err).Msg("")
 		return
 	}
 	zou.lcpProto.Up(childctx)
@@ -206,22 +198,18 @@ func (zou *ZouPPP) Close() {
 
 func (zou *ZouPPP) cancelMe() {
 	s := atomic.LoadUint32(zou.state)
-	zou.logger.Sugar().Debugf("zouppp stopped at state %v", stateStr(s))
+	zou.logger.Debug().Msgf("zouppp stopped at state %v", stateStr(s))
 	switch s {
 	case StateClosed, StateClosing:
 		return
-	}
-	switch s {
 	case StateInitial, StateDialing:
 		zou.reportDialResult()
-	}
-	if s == StateOpen {
-		//no need to report result here, since the result should already been reported
+	case StateOpen:
+		// no need to report result here, since the result should already been reported
 		doneWG(zou.sessionWG, nil)
 	}
 	atomic.StoreUint32(zou.state, StateClosing)
 	zou.cancelFunc()
-
 }
 
 func (zou *ZouPPP) reportDialResult() {
@@ -245,11 +233,9 @@ func (zou *ZouPPP) reportDialResult() {
 			}
 		}
 	})
-
 }
 
 func (zou *ZouPPP) waitForDialDone(ctx context.Context) {
-
 	select {
 	case <-ctx.Done(): //cancelled
 		zou.ncpWG.Cancel()
@@ -263,14 +249,14 @@ func (zou *ZouPPP) waitForDialDone(ctx context.Context) {
 	if zou.cfg.setup.Apply {
 		err := zou.createDatapath(ctx)
 		if err != nil {
-			zou.logger.Error(err.Error())
+			zou.logger.Error().Err(err).Msg("")
 		}
 	}
 	zou.reportDialResult()
 }
 
 func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
-	zou.logger.Sugar().Infof("LCP layer %v", evt)
+	zou.logger.Info().Msgf("LCP layer %v", evt)
 	needTOTerminate := true
 	defer func() {
 		if needTOTerminate {
@@ -282,7 +268,7 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 		//run auth
 		opauthlist := zou.lcpProto.PeerRule.GetOptions().Get(uint8(lcp.OpTypeAuthenticationProtocol))
 		if len(opauthlist) == 0 {
-			zou.logger.Error("no authentication method is negotiated")
+			zou.logger.Error().Msg("no authentication method is negotiated")
 			return
 		}
 		authProto := zou.lcpProto.PeerRule.GetOptions().Get(uint8(lcp.OpTypeAuthenticationProtocol))[0].(*lcp.LCPOpAuthProto).Proto
@@ -291,23 +277,23 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 			chapProto := chap.NewCHAP(zou.cfg.UserName, zou.cfg.Password, zou.pppProto)
 			err := chapProto.AUTHSelf()
 			if err != nil {
-				zou.logger.Sugar().Errorf("auth failed,%v", err)
+				zou.logger.Error().Err(err).Msg("auth failed")
 				return
 			}
-			zou.logger.Info("auth succeed")
+			zou.logger.Info().Msg("auth succeed")
 		case lcp.ProtoPAP:
 			papProto := pap.NewPAP(zou.cfg.UserName, zou.cfg.Password, zou.pppProto)
 			err := papProto.AuthSelf()
 			if err != nil {
-				zou.logger.Sugar().Errorf("auth failed,%v", err)
+				zou.logger.Error().Err(err).Msg("auth failed")
 				return
 			}
-			zou.logger.Info("auth succeed")
+			zou.logger.Info().Msgf("auth succeed")
 		default:
-			zou.logger.Sugar().Errorf("unkown auth method negoatied %v", authProto)
+			zou.logger.Error().Msgf("unkown auth method negoatied %v", authProto)
 			return
-
 		}
+
 		launchWaitRoutine := false
 		if zou.cfg.setup.IPv4 {
 			zou.ipcpProto = lcp.NewLCP(ctx, lcp.ProtoIPCP, zou.pppProto, zou.ipcpEvtHandler,
@@ -347,15 +333,14 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 }
 
 func (zou *ZouPPP) createDatapath(ctx context.Context) error {
-
 	zou.createFastPathMux.Lock()
 	defer zou.createFastPathMux.Unlock()
 	if zou.fastpath != nil {
 		return nil
 	}
-	zou.logger.Info("creating datapath")
+	zou.logger.Info().Msg("creating datapath")
 	var err error
-	mruop := zou.lcpProto.PeerRule.GetOptions().GetFirst((uint8(lcp.OpTypeMaximumReceiveUnit)))
+	mruop := zou.lcpProto.PeerRule.GetOptions().GetFirst(uint8(lcp.OpTypeMaximumReceiveUnit))
 	var mru uint16 = 1498
 	if mruop != nil {
 		mru = uint16(*(mruop.(*lcp.LCPOpMRU)))
@@ -378,7 +363,6 @@ func (zou *ZouPPP) createDatapath(ctx context.Context) error {
 		return fmt.Errorf("failed to create datapath, %w", err)
 	}
 	return nil
-
 }
 
 // GetV6LLA returns the IPv6 LLA the compsoed of negotiated interface-id via IPv6CP
@@ -396,7 +380,7 @@ func (zou *ZouPPP) GetV6LLA() (net.IP, error) {
 }
 
 func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
-	zou.logger.Sugar().Infof("IPCP layer %v", evt)
+	zou.logger.Info().Msgf("IPCP layer %v", evt)
 	switch evt {
 	case lcp.LCPLayerNotifyUp:
 		defer zou.ncpWG.Done()
@@ -408,10 +392,11 @@ func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent)
 		return
 	}
 }
+
 func (zou *ZouPPP) dialDHCPv6(ctx context.Context) {
 	defer zou.ncpWG.Done()
 	if zou.cfg.setup.DHCPv6IANA || zou.cfg.setup.DHCPv6IAPD {
-		zou.logger.Sugar().Infof("dialing DHCPv6 IANA %v IAPD %v", zou.cfg.setup.DHCPv6IANA, zou.cfg.setup.DHCPv6IAPD)
+		zou.logger.Info().Msgf("dialing DHCPv6 IANA %v IAPD %v", zou.cfg.setup.DHCPv6IANA, zou.cfg.setup.DHCPv6IAPD)
 		childctx, cancel := context.WithCancel(ctx)
 		econn := lcp.NewPPPConn(childctx, zou.pppProto, lcp.ProtoIPv6)
 		defer econn.Close()
@@ -421,7 +406,7 @@ func (zou *ZouPPP) dialDHCPv6(ctx context.Context) {
 			lla, dhcpv6.DefaultClientPort), econn,
 			[]etherconn.RUDPConnOption{etherconn.WithAcceptAny(true)})
 		if err != nil {
-			zou.logger.Sugar().Errorf("failed to create SharingRUDPConn %v", err)
+			zou.logger.Error().Err(err).Msg("failed to create SharingRUDPConn")
 			return
 		}
 		clnt, err := NewDHCP6Clnt(rudpconn, &DHCP6Cfg{
@@ -431,22 +416,21 @@ func (zou *ZouPPP) dialDHCPv6(ctx context.Context) {
 			NeedNA: zou.cfg.setup.DHCPv6IANA,
 		}, lla)
 		if err != nil {
-			zou.logger.Sugar().Errorf("failed to create DHCPv6 client, %v", err)
+			zou.logger.Error().Err(err).Msg("failed to create DHCPv6 client")
 			return
 		}
 		err = clnt.Dial()
 		if err != nil {
-			zou.logger.Error(err.Error())
+			zou.logger.Error().Err(err).Msg("")
 			return
 		}
 		zou.assignedIANAs = clnt.assignedIANAs
 		zou.assignedIAPDs = clnt.assignedIAPDs
-
 	}
-
 }
+
 func (zou *ZouPPP) ipcp6EvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
-	zou.logger.Sugar().Infof("IPv6CP layer %v", evt)
+	zou.logger.Info().Msgf("IPv6CP layer %v", evt)
 	switch evt {
 	case lcp.LCPLayerNotifyUp:
 		defer zou.ncpWG.Done()
@@ -495,7 +479,7 @@ type DialResult struct {
 // Setup holds common configruation for creating one or mulitple ZouPPP sessions
 type Setup struct {
 	// logger
-	logger *zap.Logger
+	logger *zerolog.Logger
 	// Ifname is the binding intereface name
 	Ifname string `alias:"i" usage:"listening interface name"`
 	// NumOfClients is the number of clients to be created
@@ -623,7 +607,7 @@ func (setup *Setup) Close() {
 	close(setup.stopResultCh)
 }
 
-func (setup *Setup) Logger() *zap.Logger {
+func (setup *Setup) Logger() *zerolog.Logger {
 	return setup.logger
 }
 
@@ -640,24 +624,9 @@ type Config struct {
 }
 
 // NewDefaultZouPPPLogger create a default logger with specified log level
-func NewDefaultZouPPPLogger(logl LoggingLvl) (*zap.Logger, error) {
-	cfg := &zap.Config{
-		Encoding:    "console",
-		Level:       zap.NewAtomicLevelAt(logLvlToZapLvl(logl)),
-		OutputPaths: []string{"stdout"},
-		EncoderConfig: zapcore.EncoderConfig{
-			MessageKey:       "message",
-			LevelKey:         "level",
-			NameKey:          "name",
-			CallerKey:        "caller",
-			TimeKey:          "time",
-			EncodeLevel:      zapcore.CapitalLevelEncoder,
-			EncodeTime:       zapcore.TimeEncoderOfLayout("2006-01-02/15:04:05"),
-			EncodeCaller:     zapcore.ShortCallerEncoder,
-			ConsoleSeparator: " ",
-		},
-	}
-	return cfg.Build()
+func NewDefaultZouPPPLogger(logl LoggingLvl) (*zerolog.Logger, error) {
+	logger := zerolog.New(os.Stdout).Level(logLvlToZapLvl(logl))
+	return &logger, nil
 }
 
 // GenClientConfigurations creates clients specific configruations per setup
@@ -882,13 +851,13 @@ func (lvl *LoggingLvl) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func logLvlToZapLvl(l LoggingLvl) zapcore.Level {
+func logLvlToZapLvl(l LoggingLvl) zerolog.Level {
 	switch l {
 	case LogLvlErr:
-		return zapcore.ErrorLevel
+		return zerolog.ErrorLevel
 	case LogLvlInfo:
-		return zapcore.InfoLevel
+		return zerolog.InfoLevel
 	default:
-		return zapcore.DebugLevel
+		return zerolog.DebugLevel
 	}
 }

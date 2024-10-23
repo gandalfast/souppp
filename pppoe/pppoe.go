@@ -4,16 +4,14 @@ package pppoe
 import (
 	"context"
 	"encoding/binary"
-
 	"errors"
 	"fmt"
+	"github.com/hujun-open/etherconn"
+	"github.com/rs/zerolog"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/hujun-open/etherconn"
-	"go.uber.org/zap"
 )
 
 // PPPoE is the PPPoE protocol
@@ -28,7 +26,7 @@ type PPPoE struct {
 	debug       bool
 	recvChan    chan []byte
 	state       *uint32
-	logger      *zap.Logger
+	logger      *zerolog.Logger
 	timeout     time.Duration
 	retry       int
 }
@@ -79,7 +77,7 @@ func WithTags(t []Tag) Modifier {
 
 // NewPPPoE return a new PPPoE struct; use conn as underlying transport, logger for logging;
 // optionally Modifer could provide custom configurations;
-func NewPPPoE(conn *etherconn.EtherConn, logger *zap.Logger, options ...Modifier) *PPPoE {
+func NewPPPoE(conn *etherconn.EtherConn, logger *zerolog.Logger, options ...Modifier) *PPPoE {
 	r := new(PPPoE)
 	r.timeout = DefaultTimeout
 	r.retry = DefaultRetry
@@ -245,8 +243,8 @@ func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt
 		if err != nil {
 			return nil, nil, err
 		}
-		pppoe.logger.Sugar().Infof("sending %v", req.Code)
-		pppoe.logger.Sugar().Debugf("%v:\n%v", req.Code, req)
+		pppoe.logger.Info().Msgf("sending %v", req.Code)
+		pppoe.logger.Debug().Msgf("%v:\n%v", req.Code, req)
 		resp := new(Pkt)
 		pppoe.conn.SetReadDeadline(time.Now().Add(pppoe.timeout))
 		rcvpktbuf, l2ep, err := pppoe.conn.ReadPkt()
@@ -267,7 +265,7 @@ func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt
 }
 
 // GetLogger returns pppoe's logger
-func (pppoe *PPPoE) GetLogger() *zap.Logger {
+func (pppoe *PPPoE) GetLogger() *zerolog.Logger {
 	return pppoe.logger
 }
 
@@ -287,21 +285,23 @@ func (pppoe *PPPoE) Dial(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pppoe.logger.Info("Got PADO")
-	pppoe.logger.Sugar().Debugf("PADO:\n%v", pado)
+	pppoe.logger.Info().Msg("Got PADO")
+	pppoe.logger.Debug().Msgf("PADO:\n%v", pado)
 	padr := pppoe.buildPADRWithPADO(pado)
 	pads, _, err = pppoe.getResponse(padr, CodePADS, pppoe.acMAC)
 	if err != nil {
 		return err
 	}
-	pppoe.logger.Info("Got PADS")
-	pppoe.logger.Sugar().Debugf("PADS:\n%v", pads)
+	pppoe.logger.Info().Msg("Got PADS")
+	pppoe.logger.Debug().Msgf("PADS:\n%v", pads)
 	if pads.SessionID == 0 {
 		return fmt.Errorf("AC rejected,\n %v", pads.String())
 	}
 	pppoe.sessionID = pads.SessionID
 	atomic.StoreUint32(pppoe.state, pppoeStateOpen)
-	pppoe.logger = pppoe.logger.Named(fmt.Sprintf("%X", pppoe.sessionID))
+
+	logger := pppoe.logger.With().Str("SessionID", fmt.Sprintf("%X", pppoe.sessionID)).Logger()
+	pppoe.logger = &logger
 	_, pppoe.cancelFunc = context.WithCancel(ctx)
 	return nil
 }

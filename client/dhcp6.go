@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"net"
-	"time"
-
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"github.com/insomniacslk/dhcp/dhcpv6/nclient6"
 	"github.com/insomniacslk/dhcp/iana"
+	"net"
+	"time"
 )
 
 // DHCP6Cfg hold configuration for DHCP6Clnt
@@ -29,14 +28,14 @@ type DHCP6Clnt struct {
 	assignedIAPDs                     []*net.IPNet
 }
 
-//NewDHCP6Clnt creates a new DHCPv6 client,
-//using conn as transport,
-//cfg holds the the configuration,
-//localLLA is used for local link local address for DHCPv6 msg
+// NewDHCP6Clnt creates a new DHCPv6 client,
+// using conn as transport,
+// cfg holds the the configuration,
+// localLLA is used for local link local address for DHCPv6 msg
 func NewDHCP6Clnt(conn net.PacketConn, cfg *DHCP6Cfg, localLLA net.IP) (*DHCP6Clnt, error) {
-	mods := []nclient6.ClientOpt{}
+	var mods []nclient6.ClientOpt
 	if cfg.Debug {
-		mods = []nclient6.ClientOpt{nclient6.WithDebugLogger(), nclient6.WithLogDroppedPackets()}
+		mods = append(mods, nclient6.WithDebugLogger(), nclient6.WithLogDroppedPackets())
 	}
 	r := new(DHCP6Clnt)
 	var err error
@@ -62,6 +61,7 @@ func NewDHCP6Clnt(conn net.PacketConn, cfg *DHCP6Cfg, localLLA net.IP) (*DHCP6Cl
 	r.assignedIAPDs = []*net.IPNet{}
 	return r, nil
 }
+
 func getIAIDviaTime(delta int64) (r [4]byte) {
 	buf := make([]byte, binary.MaxVarintLen64)
 	binary.PutVarint(buf, time.Now().UnixNano()+delta)
@@ -70,17 +70,16 @@ func getIAIDviaTime(delta int64) (r [4]byte) {
 }
 
 func (dc *DHCP6Clnt) buildSolicit() (*dhcpv6.Message, error) {
-	optModList := []dhcpv6.Modifier{}
+	var optModList []dhcpv6.Modifier
 	if dc.cfg.NeedNA {
 		optModList = append(optModList, dhcpv6.WithIAID(getIAIDviaTime(0)))
 	}
 	if dc.cfg.NeedPD {
 		optModList = append(optModList, dhcpv6.WithIAPD(getIAIDviaTime(1)))
 	}
-	duid := dhcpv6.Duid{
-		Type:          dhcpv6.DUID_LL,
-		HwType:        iana.HWTypeEthernet,
-		Time:          dhcpv6.GetTime(),
+
+	duid := &dhcpv6.DUIDLL{
+		HWType:        iana.HWTypeEthernet,
 		LinkLayerAddr: dc.cfg.Mac,
 	}
 	m, err := dhcpv6.NewMessage()
@@ -98,14 +97,12 @@ func (dc *DHCP6Clnt) buildSolicit() (*dhcpv6.Message, error) {
 		mod(m)
 	}
 	return m, nil
-
 }
 
 // Dial completes a DHCPv6 exchange with server
 func (dc *DHCP6Clnt) Dial() error {
 	checkResp := func(msg *dhcpv6.Message, record bool) error {
 		if dc.cfg.NeedNA {
-
 			if len(msg.Options.OneIANA().Options.Addresses()) == 0 {
 				return fmt.Errorf("no IANA address is assigned")
 			}
@@ -115,8 +112,8 @@ func (dc *DHCP6Clnt) Dial() error {
 					dc.assignedIANAs = append(dc.assignedIANAs, addr.IPv6Addr)
 				}
 			}
-
 		}
+
 		if dc.cfg.NeedPD {
 			if len(msg.Options.OneIAPD().Options.Prefixes()) == 0 {
 				return fmt.Errorf("no IAPD prefix is assigned")
@@ -130,6 +127,7 @@ func (dc *DHCP6Clnt) Dial() error {
 		}
 		return nil
 	}
+
 	solicitMsg, err := dc.buildSolicit()
 	if err != nil {
 		return fmt.Errorf("failed to create solicit msg for %v, %v", dc.cfg.Mac, err)
@@ -140,10 +138,10 @@ func (dc *DHCP6Clnt) Dial() error {
 	if err != nil {
 		return fmt.Errorf("failed recv DHCPv6 advertisement for %v, %v", dc.cfg.Mac, err)
 	}
-	err = checkResp(adv, false)
-	if err != nil {
+	if err := checkResp(adv, false); err != nil {
 		return fmt.Errorf("got invalid advertise msg for clnt %v, %v", dc.cfg.Mac, err)
 	}
+
 	request, err := newRequestFromAdv(adv)
 	if err != nil {
 		return fmt.Errorf("failed to build request msg for clnt %v, %v", dc.cfg.Mac, err)
@@ -154,8 +152,8 @@ func (dc *DHCP6Clnt) Dial() error {
 	if err != nil {
 		return fmt.Errorf("failed to recv DHCPv6 reply for %v, %v", dc.cfg.Mac, err)
 	}
-	err = checkResp(reply, true)
-	if err != nil {
+
+	if err := checkResp(reply, true); err != nil {
 		return fmt.Errorf("got invalid reply msg for %v, %v", dc.cfg.Mac, err)
 	}
 	return nil

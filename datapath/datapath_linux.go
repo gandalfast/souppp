@@ -8,13 +8,11 @@ package datapath
 import (
 	"context"
 	"fmt"
-	"net"
-
 	"github.com/gandalfast/zouppp/lcp"
-
+	"github.com/rs/zerolog"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
-	"go.uber.org/zap"
+	"net"
 )
 
 // TUNIF is the TUN interface for a opened PPP session
@@ -24,7 +22,7 @@ type TUNIF struct {
 	sendChan               chan []byte
 	v4recvChan, v6recvChan chan []byte
 	maxFrameSize           int
-	logger                 *zap.Logger
+	logger                 *zerolog.Logger
 	ownV4Addr              net.IP
 }
 
@@ -112,7 +110,8 @@ func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs
 	netlink.LinkSetMTU(r.nlink, mtu)
 
 	r.maxFrameSize = DefaultMaxFrameSize
-	r.logger = pppproto.GetLogger().Named("datapath")
+	logger := pppproto.GetLogger().With().Str("Name", "datapath").Logger()
+	r.logger = &logger
 	go r.send(ctx)
 	go r.recv(ctx)
 	return r, nil
@@ -126,12 +125,12 @@ func (tif *TUNIF) send(ctx context.Context) {
 		b := make([]byte, tif.maxFrameSize)
 		n, err := tif.intf.Read(b)
 		if err != nil {
-			tif.logger.Sugar().Errorf("failed to read, %v", err)
+			tif.logger.Error().Err(err).Msg("failed to read")
 			return
 		}
 		select {
 		case <-ctx.Done():
-			tif.logger.Info("send routine stopped")
+			tif.logger.Info().Msg("send routine stopped")
 			tif.intf.Close()
 			return
 		default:
@@ -159,7 +158,7 @@ func (tif *TUNIF) recv(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			tif.logger.Info("recv routine stopped")
+			tif.logger.Info().Msg("recv routine stopped")
 			return
 		case pktbytes = <-tif.v4recvChan:
 			// gpacket := gopacket.NewPacket(pktbytes, layers.LayerTypeIPv4, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
@@ -171,7 +170,7 @@ func (tif *TUNIF) recv(ctx context.Context) {
 		}
 		_, err := tif.intf.Write(pktbytes)
 		if err != nil {
-			tif.logger.Sugar().Error("failed to send to TUN interface, %v", err)
+			tif.logger.Error().Err(err).Msg("failed to send to TUN interface")
 			return
 		}
 	}

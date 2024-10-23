@@ -1,14 +1,13 @@
-// Package chap implments CHAPwithMD5 as specified in rfc1994
+// Package chap implments CHAPwithMD5 as specified in RFC1994
 package chap
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
-	"time"
-
 	"github.com/gandalfast/zouppp/lcp"
-
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
+	"time"
 )
 
 // CHAP is the CHAP protocol
@@ -17,7 +16,7 @@ type CHAP struct {
 	passwd   string
 	sendChan chan []byte
 	recvChan chan []byte
-	logger   *zap.Logger
+	logger   *zerolog.Logger
 	timeout  time.Duration
 }
 
@@ -30,7 +29,8 @@ func NewCHAP(uname, passwd string, pppProto *lcp.PPP) *CHAP {
 	r.peerID = uname
 	r.passwd = passwd
 	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoCHAP)
-	r.logger = pppProto.GetLogger()
+	logger := pppProto.GetLogger().With().Str("Name", "CHAP").Logger()
+	r.logger = &logger
 	r.timeout = DefaultTimeout
 	return r
 }
@@ -47,37 +47,29 @@ func (chap *CHAP) send(p []byte) error {
 	return nil
 }
 
-func (chap *CHAP) getResponse(final bool) (*Pkt, error) {
-	var pkt *Pkt
-	var err error
-	t := time.NewTimer(chap.timeout)
-	defer t.Stop()
-L1:
-	for {
+func (chap *CHAP) getResponse(final bool) (pkt *Pkt, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), chap.timeout)
+	defer cancel()
+
+	var done bool
+	for !done {
 		select {
 		case b := <-chap.recvChan:
 			pkt = new(Pkt)
-			err = pkt.Parse(b)
-			if err != nil {
-				chap.logger.Sugar().Warnf("got an invalid CHAP pkt,%v", err)
-				continue L1
+			if err := pkt.Parse(b); err != nil {
+				chap.logger.Warn().Err(err).Msg("got an invalid CHAP pkt")
+				break
 			}
-			if !final {
-				if pkt.Code == CodeChallenge {
-					break L1
-				}
-			} else {
-				if pkt.Code == CodeSuccess || pkt.Code == CodeFailure {
-					break L1
-				}
+			if (!final && pkt.Code == CodeChallenge) || (final && (pkt.Code == CodeSuccess || pkt.Code == CodeFailure)) {
+				done = true
+				break
 			}
-
-		case <-t.C:
+		case <-ctx.Done():
 			return nil, fmt.Errorf("CHAP authentication failed, timeout")
 		}
 	}
-	return pkt, nil
 
+	return pkt, nil
 }
 
 // AUTHSelf auth self to peer, return nil if auth succeeds
@@ -86,7 +78,7 @@ func (chap *CHAP) AUTHSelf() error {
 	if err != nil {
 		return err
 	}
-	chap.logger.Sugar().Debugf("got CHAP challenge:\n%v", challenge)
+	chap.logger.Debug().Any("challenge", challenge).Msg("got CHAP challenge")
 	resp := new(Pkt)
 	resp.Code = CodeResponse
 	resp.ID = challenge.ID
@@ -94,10 +86,10 @@ func (chap *CHAP) AUTHSelf() error {
 	h := md5.New()
 	toBuf := append([]byte{challenge.ID}, []byte(chap.passwd)...)
 	toBuf = append(toBuf, challenge.Value...)
-	chap.logger.Sugar().Debugf("hashing id %x, passwd %s,challege %x", challenge.ID, chap.passwd, challenge.Value)
+	chap.logger.Debug().Msgf("hashing id %x, passwd %s,challege %x", challenge.ID, chap.passwd, challenge.Value)
 	h.Write(toBuf)
 	resp.Value = h.Sum(nil)
-	chap.logger.Sugar().Debugf("hash value is %x", resp.Value)
+	chap.logger.Debug().Msgf("hash value is %x", resp.Value)
 
 	resp.Name = []byte(chap.peerID)
 	b, err := resp.Serialize()
@@ -108,12 +100,12 @@ func (chap *CHAP) AUTHSelf() error {
 	if err != nil {
 		return fmt.Errorf("failed to send CHAP response,%w", err)
 	}
-	chap.logger.Sugar().Debugf("send CHAP response:\n%v", resp)
+	chap.logger.Debug().Any("resp", resp).Msg("send CHAP response")
 	finalresp, err := chap.getResponse(true)
 	if err != nil {
 		return fmt.Errorf("failed to get final CHAP response,%w", err)
 	}
-	chap.logger.Sugar().Debugf("got CHAP final response:\n%v", finalresp)
+	chap.logger.Debug().Any("resp", finalresp).Msg("got CHAP final response")
 	if finalresp.Code == CodeFailure {
 		return fmt.Errorf("gateway returned failed")
 	}
