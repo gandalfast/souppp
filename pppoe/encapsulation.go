@@ -2,8 +2,8 @@ package pppoe
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 const identSpaces = "    "
@@ -99,16 +99,9 @@ func (pkt *Pkt) GetTag(t TagType) (r []Tag) {
 }
 
 // String returns a string representation of pkt
-func (pkt Pkt) String() string {
-	s := fmt.Sprintf("VerType:%x\n", pkt.Vertype)
-	s += fmt.Sprintf("Code:%v\n", pkt.Code)
-	s += fmt.Sprintf("SessionId:%X\n", pkt.SessionID)
-	s += fmt.Sprintf("Len:%d\n", pkt.Len)
-	s += "Tags:\n"
-	for _, t := range pkt.Tags {
-		s += fmt.Sprintf("%v%v\n", identSpaces, strings.ReplaceAll(t.String(), "\n", "\n"+identSpaces))
-	}
-	return s
+func (pkt *Pkt) String() string {
+	data, _ := json.Marshal(pkt)
+	return string(data)
 }
 
 // Tag is the interface for PPPoE Tag
@@ -326,7 +319,9 @@ func (bslice *BBFSubTagByteSlice) Parse(buf []byte) (int, error) {
 }
 
 // BBFTag represents a BBF PPPoE tag, which could include multiple sub-tag
-type BBFTag []Tag
+type BBFTag struct {
+	tags []Tag
+}
 
 // Parse implements Tag interface
 func (bbf *BBFTag) Parse(buf []byte) (int, error) {
@@ -358,7 +353,7 @@ func (bbf *BBFTag) Parse(buf []byte) (int, error) {
 			return 0, fmt.Errorf("failed to parse BBF subtag,%w", err)
 		}
 		pos += n
-		*bbf = append(*bbf, tag)
+		bbf.tags = append(bbf.tags, tag)
 		if pos >= len(buf) {
 			break
 		}
@@ -370,12 +365,12 @@ func (bbf *BBFTag) Parse(buf []byte) (int, error) {
 }
 
 // Serialize implements Tag interface
-func (bbf BBFTag) Serialize() ([]byte, error) {
+func (bbf *BBFTag) Serialize() ([]byte, error) {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint16(buf[:2], 0x105)
 	binary.BigEndian.PutUint32(buf[4:8], 0xde9)
 	tagLen := 4
-	for _, t := range bbf {
+	for _, t := range bbf.tags {
 		newt, err := t.Serialize()
 		if err != nil {
 			return nil, err
@@ -388,14 +383,14 @@ func (bbf BBFTag) Serialize() ([]byte, error) {
 }
 
 // Type implements Tag interface
-func (bbf BBFTag) Type() uint16 {
+func (bbf *BBFTag) Type() uint16 {
 	return uint16(TagTypeVendorSpecific)
 }
 
 // String implements Tag interface
-func (bbf BBFTag) String() string {
+func (bbf *BBFTag) String() string {
 	s := "VendorSpecific, BBF:"
-	for _, t := range bbf {
+	for _, t := range bbf.tags {
 		s += fmt.Sprintf("\n%v%v", identSpaces, t.String())
 	}
 	return s
@@ -412,10 +407,10 @@ func NewCircuitRemoteIDTag(cid, rid string) *BBFTag {
 	}
 	bbftag := &BBFTag{}
 	if cid != "" {
-		*bbftag = append(*bbftag, newFunc(cid, BBFSubTagNumCircuitID))
+		bbftag.tags = append(bbftag.tags, newFunc(cid, BBFSubTagNumCircuitID))
 	}
 	if rid != "" {
-		*bbftag = append(*bbftag, newFunc(rid, BBFSubTagNumRemoteID))
+		bbftag.tags = append(bbftag.tags, newFunc(rid, BBFSubTagNumRemoteID))
 	}
 	return bbftag
 }
