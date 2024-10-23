@@ -11,11 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hujun-open/zouppp/chap"
-	"github.com/hujun-open/zouppp/datapath"
-	"github.com/hujun-open/zouppp/lcp"
-	"github.com/hujun-open/zouppp/pap"
-	"github.com/hujun-open/zouppp/pppoe"
+	"github.com/gandalfast/zouppp/chap"
+	"github.com/gandalfast/zouppp/datapath"
+	"github.com/gandalfast/zouppp/lcp"
+	"github.com/gandalfast/zouppp/pap"
+	"github.com/gandalfast/zouppp/pppoe"
 	"github.com/insomniacslk/dhcp/dhcpv6"
 
 	"github.com/hujun-open/etherconn"

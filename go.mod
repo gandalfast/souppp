@@ -1,4 +1,4 @@
-module github.com/hujun-open/zouppp
+module github.com/gandalfast/zouppp
 
 go 1.20
 

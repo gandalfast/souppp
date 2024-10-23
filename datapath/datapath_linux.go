@@ -1,7 +1,8 @@
 // Package datapath implements linux data path for PPPoE/PPP;
-// 	TODO: currently datapath does NOT do following:
-// 		- create default route with nexthop as the TUN interface
-// 		- apply DNS server address
+//
+//	TODO: currently datapath does NOT do following:
+//		- create default route with nexthop as the TUN interface
+//		- apply DNS server address
 package datapath
 
 import (
@@ -9,7 +10,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/hujun-open/zouppp/lcp"
+	"github.com/gandalfast/zouppp/lcp"
 
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"

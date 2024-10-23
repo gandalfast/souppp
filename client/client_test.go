@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hujun-open/zouppp/lcp"
-	"github.com/hujun-open/zouppp/pppoe"
+	"github.com/gandalfast/zouppp/lcp"
+	"github.com/gandalfast/zouppp/pppoe"
 
 	"github.com/hujun-open/etherconn"
 )

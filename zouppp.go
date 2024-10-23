@@ -31,10 +31,10 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/gandalfast/zouppp/client"
+	"github.com/gandalfast/zouppp/pppoe"
 	"github.com/hujun-open/etherconn"
 	"github.com/hujun-open/shouchan"
-	"github.com/hujun-open/zouppp/client"
-	"github.com/hujun-open/zouppp/pppoe"
 )
 
 func main() {

@@ -1,6 +1,6 @@
 # zouppp
-![Build Status](https://github.com/hujun-open/zouppp/actions/workflows/main.yml/badge.svg)
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/hujun-open/zouppp)](https://pkg.go.dev/github.com/hujun-open/zouppp)
+![Build Status](https://github.com/gandalfast/zouppp/actions/workflows/main.yml/badge.svg)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/gandalfast/zouppp)](https://pkg.go.dev/github.com/gandalfast/zouppp)
 
 zouppp is a set of GO modules implements PPPoE and related protocols:
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hujun-open/zouppp/lcp"
+	"github.com/gandalfast/zouppp/lcp"
 
 	"go.uber.org/zap"
 )
