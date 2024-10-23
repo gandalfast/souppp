@@ -6,8 +6,8 @@ zouppp is a set of GO modules implements PPPoE and related protocols:
 
  * zouppp/pppoe: PPPoE RFC2516
  * zouppp/lcp: PPP/LCP RFC1661; IPCP RFC1332; IPv6CP RFC5072;
- * zouppp/pap: PAP RFC1334
- * zouppp/chap: CHAP RFC1994
+ * zouppp/auth/pap: PAP RFC1334
+ * zouppp/auth/chap: CHAP RFC1994
  * zouppp/datapath: linux datapath
  * zouppp/client: PPPoE Client
  * zouppp/client.DHCP6Clnt: DHCPv6 client
