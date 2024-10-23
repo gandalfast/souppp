@@ -7,7 +7,7 @@ import (
 // Code is the code of CHAP msg
 type Code uint8
 
-// list of CHAPCode
+// List of CHAPCode
 const (
 	CodeChallenge Code = 1
 	CodeResponse  Code = 2

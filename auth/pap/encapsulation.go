@@ -3,6 +3,8 @@ package pap
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Pkt represents a PAP pkt
@@ -21,7 +23,7 @@ func (pp *Pkt) Parse(buf []byte) error {
 		return fmt.Errorf("not enough bytes for a PAP pkt %d", len(buf))
 	}
 	pp.Code = Code(buf[0])
-	pp.ID = uint8(buf[1])
+	pp.ID = buf[1]
 	pp.Len = binary.BigEndian.Uint16(buf[2:4])
 	switch pp.Code {
 	case CodeAuthRequest:
@@ -72,8 +74,8 @@ func (pp *Pkt) Serialize() ([]byte, error) {
 		buf = append(header, byte(len(pp.Msg)))
 		buf = append(buf, pp.Msg...)
 		totallen = 5 + len(pp.Msg)
-
 	}
+
 	if totallen > 65535 {
 		return nil, fmt.Errorf("result pkt too big")
 	}
@@ -82,15 +84,26 @@ func (pp *Pkt) Serialize() ([]byte, error) {
 }
 
 // String returns a string representation of pp
-func (pp Pkt) String() string {
-	s := fmt.Sprintf("Code: %v\n", pp.Code)
-	s += fmt.Sprintf("ID: %d\n", pp.ID)
+func (pp *Pkt) String() string {
+	var s strings.Builder
+	s.WriteString("Code: ")
+	s.WriteString(strconv.Itoa(int(pp.Code)))
+	s.WriteString("\nID: ")
+	s.WriteString(strconv.Itoa(int(pp.ID)))
+	s.WriteByte('\n')
 	switch pp.Code {
 	case CodeAuthRequest:
-		s += fmt.Sprintf("PeerID: %v\n", string(pp.PeerID))
-		s += fmt.Sprintf("Passwd: %v\n", string(pp.Passwd))
+		s.WriteString("PeerID: ")
+		s.Write(pp.PeerID)
+		s.WriteByte('\n')
+
+		s.WriteString("Passwd: ")
+		s.Write(pp.Passwd)
+		s.WriteByte('\n')
 	default:
-		s += fmt.Sprintf("Msg: %v\n", string(pp.Msg))
+		s.WriteString("Msg: ")
+		s.Write(pp.Msg)
+		s.WriteByte('\n')
 	}
-	return s
+	return s.String()
 }

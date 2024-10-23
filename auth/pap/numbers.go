@@ -7,7 +7,7 @@ import (
 // Code is the PAP msg code
 type Code uint8
 
-// a list of PAP msg code
+// A list of PAP msg code
 const (
 	CodeAuthRequest Code = 1
 	CodeAuthACK     Code = 2

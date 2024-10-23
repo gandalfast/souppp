@@ -2,7 +2,10 @@ package chap
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Pkt represents a CHAP packet
@@ -22,7 +25,7 @@ func (cp *Pkt) Parse(buf []byte) error {
 		return fmt.Errorf("invalid CHAP packet length %d", len(buf))
 	}
 	cp.Code = Code(buf[0])
-	cp.ID = uint8(buf[1])
+	cp.ID = buf[1]
 	cp.Len = binary.BigEndian.Uint16(buf[2:4])
 	if cp.Len < 4 {
 		return fmt.Errorf("invalid CHAP packet length field %d", cp.Len)
@@ -42,22 +45,6 @@ func (cp *Pkt) Parse(buf []byte) error {
 		cp.Msg = buf[4:cp.Len]
 	}
 	return nil
-}
-
-// String returns a string representation of cp
-func (cp Pkt) String() string {
-	s := fmt.Sprintf("Code:%v\n", cp.Code)
-	s += fmt.Sprintf("ID:%d\n", cp.ID)
-	s += fmt.Sprintf("Len:%d\n", cp.Len)
-	switch cp.Code {
-	case CodeChallenge, CodeResponse:
-		s += fmt.Sprintf("Val:%x\n", cp.Value)
-		s += fmt.Sprintf("Name:%s\n", string(cp.Name))
-	default:
-		s += fmt.Sprintf("Msg:%s\n", string(cp.Msg))
-
-	}
-	return s
 }
 
 // Serialize cp into byte slice
@@ -82,4 +69,31 @@ func (cp *Pkt) Serialize() ([]byte, error) {
 	}
 	binary.BigEndian.PutUint16(buf[2:4], uint16(totalen))
 	return buf, nil
+}
+
+// String returns a string representation of cp
+func (cp *Pkt) String() string {
+	var s strings.Builder
+	s.WriteString("Code: ")
+	s.WriteString(strconv.Itoa(int(cp.Code)))
+	s.WriteString("\nID: ")
+	s.WriteString(strconv.Itoa(int(cp.ID)))
+	s.WriteString("\nLen: ")
+	s.WriteString(strconv.Itoa(int(cp.Len)))
+	s.WriteByte('\n')
+	switch cp.Code {
+	case CodeChallenge, CodeResponse:
+		s.WriteString("Val: ")
+		s.WriteString(hex.EncodeToString(cp.Value))
+		s.WriteByte('\n')
+
+		s.WriteString("Name: ")
+		s.Write(cp.Name)
+		s.WriteByte('\n')
+	default:
+		s.WriteString("Msg: ")
+		s.Write(cp.Msg)
+		s.WriteByte('\n')
+	}
+	return s.String()
 }

@@ -98,9 +98,6 @@ func (chap *CHAP) AUTHSelf() error {
 	h.Write(toBuf)
 	resp.Value = h.Sum(nil)
 	chap.logger.Sugar().Debugf("hash value is %x", resp.Value)
-	//h.Write(append([]byte{challenge.ID}, []byte(chap.Passwd)...))
-	//h.Write(challenge.Value)
-	//resp.Value = h.Sum(nil)
 
 	resp.Name = []byte(chap.peerID)
 	b, err := resp.Serialize()

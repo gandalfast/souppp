@@ -43,7 +43,6 @@ func NewPAP(uname, passwd string, pppProto *lcp.PPP) *PAP {
 }
 
 func (pap *PAP) getResponse(req *Pkt) (*Pkt, error) {
-
 	var t *time.Timer
 	resp := new(Pkt)
 	for i := 0; i < pap.retry; i++ {
