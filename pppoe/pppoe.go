@@ -167,6 +167,7 @@ func (pppoe *PPPoE) buildPADRWithPADO(pado *Pkt) *Pkt {
 		}
 	}
 	padr.Tags = append(padr.Tags, pado.GetTag(TagTypeACCookie)...)
+	padr.Tags = append(padr.Tags, pado.GetTag(TagTypeRelaySessionID)...)
 	return padr
 }
 
