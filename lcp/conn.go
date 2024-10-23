@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/hujun-open/etherconn"
+	"github.com/gandalfast/zouppp/etherconn"
 	"net"
 	"sync"
 	"time"

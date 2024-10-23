@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/hujun-open/etherconn"
+	"github.com/gandalfast/zouppp/etherconn"
 	"github.com/rs/zerolog"
 	"net"
 	"sync"
@@ -227,7 +227,6 @@ func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 func (pppoe *PPPoE) newRemotePPPoEP(mac net.HardwareAddr) *Endpoint {
 	l2ep := etherconn.L2Endpoint{
 		HwAddr: mac,
-		VLANs:  pppoe.conn.LocalAddr().VLANs,
 	}
 	return newPPPoEEndpoint(&l2ep, pppoe.sessionID)
 }

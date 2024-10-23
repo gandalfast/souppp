@@ -7,11 +7,11 @@ import (
 	"github.com/gandalfast/zouppp/auth/chap"
 	"github.com/gandalfast/zouppp/auth/pap"
 	"github.com/gandalfast/zouppp/datapath"
+	"github.com/gandalfast/zouppp/etherconn"
 	"github.com/gandalfast/zouppp/lcp"
 	"github.com/gandalfast/zouppp/myaddr"
 	"github.com/gandalfast/zouppp/mywg"
 	"github.com/gandalfast/zouppp/pppoe"
-	"github.com/hujun-open/etherconn"
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"github.com/rs/zerolog"
 	"math/big"
@@ -488,12 +488,6 @@ type Setup struct {
 	StartMAC net.HardwareAddr `alias:"mac" usage:"start MAC address"`
 	// MacStep is the mac address step to increase for each session
 	MacStep uint `usage:"MAC step to increase for each client"`
-	// StartVLANs is the starting vlans for all the sessions
-	StartVLANs etherconn.VLANs `alias:"vlan" usage:"start VLAN id, could be Dot1q or QinQ"`
-	// VLANStep is the vlan step to increase for each session
-	VLANStep uint `usage:"VLAN step to increase for each client"`
-	// ExcludedVLANs is the slice of vlan id to skip, apply to all layer of vlans
-	ExcludedVLANs []uint16 `usage:"a list of excluded VLAN id, apply to all layer of vlans"`
 	// Interval is the amount of time to wait between launching each session
 	Interval time.Duration `usage:"amount of time to wait between launching each session"`
 	LogLevel LoggingLvl    `alias:"l" usage:"log levl, err|info|debug"`
@@ -592,17 +586,6 @@ func (setup *Setup) Init() error {
 	return nil
 }
 
-func (setup *Setup) excluded(vids []uint16) bool {
-	for _, vid := range vids {
-		for _, extv := range setup.ExcludedVLANs {
-			if extv == vid {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (setup *Setup) Close() {
 	close(setup.stopResultCh)
 }
@@ -614,7 +597,6 @@ func (setup *Setup) Logger() *zerolog.Logger {
 // Config hold client specific configuration
 type Config struct {
 	Mac       net.HardwareAddr
-	VLANs     etherconn.VLANs
 	setup     *Setup
 	RID       string
 	CID       string
@@ -633,7 +615,6 @@ func NewDefaultZouPPPLogger(logl LoggingLvl) (*zerolog.Logger, error) {
 func GenClientConfigurations(setup *Setup) ([]*Config, error) {
 	r := []*Config{}
 	clntmac := setup.StartMAC
-	vlans := setup.StartVLANs
 	var err error
 	for i := 0; i < int(setup.NumOfClients); i++ {
 		ccfg := Config{}
@@ -648,46 +629,8 @@ func GenClientConfigurations(setup *Setup) ([]*Config, error) {
 
 		}
 		clntmac = ccfg.Mac
-		//assign vlan
-		ccfg.VLANs = vlans.Clone()
 
-		incvidFunc := func(ids, excludes []uint16, step int) ([]uint16, error) {
-			newids := ids
-			for i := 0; i < 10; i++ {
-				newids, err = myaddr.IncreaseVLANIDs(newids, step)
-				if err != nil {
-					return []uint16{}, err
-				}
-				excluded := false
-			L1:
-				for _, v := range newids {
-					for _, exc := range excludes {
-						if v == exc {
-							excluded = true
-							break L1
-						}
-					}
-				}
-				if !excluded {
-					return newids, nil
-				}
-			}
-			return []uint16{}, fmt.Errorf("you shouldn't see this")
-		}
-
-		if (len(vlans) > 0 && i > 0) || setup.excluded(vlans.IDs()) {
-			rids, err := incvidFunc(vlans.IDs(), setup.ExcludedVLANs, int(setup.VLANStep))
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate vlan id,%v", err)
-			}
-			err = ccfg.VLANs.SetIDs(rids)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate and apply vlan id,%v", err)
-			}
-		}
-		vlans = ccfg.VLANs
 		//options
-
 		ccfg.RID = genStrFunc(setup.RID, i)
 		ccfg.CID = genStrFunc(setup.CID, i)
 		ccfg.UserName = genStrFunc(setup.UserName, i)

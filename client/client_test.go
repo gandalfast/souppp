@@ -8,6 +8,7 @@ in order to run this test in ubuntu20.04, do following:
 */
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -21,10 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gandalfast/zouppp/etherconn"
 	"github.com/gandalfast/zouppp/lcp"
 	"github.com/gandalfast/zouppp/pppoe"
-
-	"github.com/hujun-open/etherconn"
 )
 
 const (
@@ -673,11 +673,7 @@ func TestPPPoE(t *testing.T) {
 		defer cancel()
 		var relay etherconn.PacketRelay
 		if !usingxdp {
-			relay, err = etherconn.NewRawSocketRelay(ctx, clntIF,
-				etherconn.WithDebug(true),
-				etherconn.WithRecvTimeout(c.zouconfig.setup.Timeout),
-				etherconn.WithBPFFilter(`(ether proto 0x8863 or 0x8864) or (vlan and ether proto 0x8863 or 0x8864)`),
-			)
+			t.Fatal(errors.New("XDP must be enabled"))
 		} else {
 			relay, err = etherconn.NewXDPRelay(ctx, clntIF,
 				etherconn.WithQueueID([]int{0}),
@@ -694,7 +690,6 @@ func TestPPPoE(t *testing.T) {
 		dialwg := new(sync.WaitGroup)
 		dialwg.Add(1)
 		econn := etherconn.NewEtherConn(c.zouconfig.Mac, relay,
-			etherconn.WithVLANs(c.zouconfig.VLANs),
 			etherconn.WithEtherTypes([]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession}),
 			etherconn.WithRecvMulticast(true))
 		// err = execCMD("ip netns exec S ip link set S xdp object xdpethfilter_kern.o section xdp_pass_sec")

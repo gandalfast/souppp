@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/hujun-open/etherconn"
+	"github.com/gandalfast/zouppp/etherconn"
 	"github.com/rs/zerolog"
 	"net"
 	"sync"

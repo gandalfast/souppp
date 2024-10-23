@@ -3,24 +3,23 @@ module github.com/gandalfast/zouppp
 go 1.22
 
 require (
-	github.com/hujun-open/etherconn v0.9.0
+	github.com/asavie/xdp v0.3.4-0.20240826152323-67e5ba17320c
+	github.com/cilium/ebpf v0.16.0
+	github.com/google/gopacket v1.1.19
 	github.com/insomniacslk/dhcp v0.0.0-20240829085014-a3a4c1f04475
 	github.com/rs/zerolog v1.33.0
+	github.com/safchain/ethtool v0.4.1
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
+	golang.org/x/sys v0.26.0
 )
 
 require (
-	github.com/asavie/xdp v0.3.4-0.20240826152323-67e5ba17320c // indirect
-	github.com/cilium/ebpf v0.16.0 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
-	github.com/safchain/ethtool v0.4.1 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
 	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
 )
