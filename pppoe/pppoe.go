@@ -83,8 +83,10 @@ func NewPPPoE(conn *etherconn.EtherConn, logger *zerolog.Logger, options ...Modi
 	r.retry = DefaultRetry
 	r.tags = []Tag{
 		&TagString{
-			TagType: TagTypeServiceName,
-			Value:   r.serviceName,
+			TagByteSlice: &TagByteSlice{
+				TagType: TagTypeServiceName,
+				Value:   []byte(r.serviceName),
+			},
 		},
 	}
 	for _, option := range options {
@@ -129,34 +131,37 @@ func (pppoe *PPPoE) Close() error {
 		if err != nil {
 			return err
 		}
-		pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, pppoe.acMAC)
+		_, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, pppoe.acMAC)
+		pppoe.logger.Info().Err(err).Any("pkt", pkt).Msg("sending PADT packet")
 	}
 	return nil
 }
 
-func (pppoe *PPPoE) buildPADT() *Pkt {
-	return &Pkt{
+func (pppoe *PPPoE) buildPADT() *Packet {
+	return &Packet{
 		Code:      CodePADT,
 		SessionID: pppoe.sessionID,
 	}
 }
 
-func (pppoe *PPPoE) buildPADI() *Pkt {
-	padi := new(Pkt)
+func (pppoe *PPPoE) buildPADI() *Packet {
+	padi := new(Packet)
 	padi.Code = CodePADI
 	padi.SessionID = 0
 	padi.Tags = pppoe.tags
 	return padi
 }
 
-func (pppoe *PPPoE) buildPADRWithPADO(pado *Pkt) *Pkt {
-	padr := new(Pkt)
+func (pppoe *PPPoE) buildPADRWithPADO(pado *Packet) *Packet {
+	padr := new(Packet)
 	padr.Code = CodePADR
 	padr.SessionID = 0
 	padr.Tags = []Tag{
 		&TagString{
-			TagType: TagTypeServiceName,
-			Value:   pppoe.serviceName,
+			TagByteSlice: &TagByteSlice{
+				TagType: TagTypeServiceName,
+				Value:   []byte(pppoe.serviceName),
+			},
 		},
 	}
 	for _, t := range pppoe.tags {
@@ -174,7 +179,7 @@ func (pppoe *PPPoE) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if atomic.LoadUint32(pppoe.state) != pppoeStateOpen {
 		return 0, fmt.Errorf("pppoe is not open")
 	}
-	pkt := new(Pkt)
+	pkt := new(Packet)
 	pkt.SessionID = pppoe.sessionID
 	pkt.Code = CodeSession
 	pkt.Payload = p
@@ -232,7 +237,7 @@ func (pppoe *PPPoE) newRemotePPPoEP(mac net.HardwareAddr) *Endpoint {
 }
 
 // getResponse return 1st rcvd PPPoE response as specified by code, along with remote mac
-func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt, net.HardwareAddr, error) {
+func (pppoe *PPPoE) getResponse(req *Packet, code Code, dst net.HardwareAddr) (*Packet, net.HardwareAddr, error) {
 	pktbytes, err := req.Serialize()
 	if err != nil {
 		return nil, nil, err
@@ -244,7 +249,7 @@ func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt
 		}
 		pppoe.logger.Info().Msgf("sending %v", req.Code)
 		pppoe.logger.Debug().Msgf("%v:\n%v", req.Code, req)
-		resp := new(Pkt)
+		resp := new(Packet)
 		pppoe.conn.SetReadDeadline(time.Now().Add(pppoe.timeout))
 		rcvpktbuf, l2ep, err := pppoe.conn.ReadPkt()
 		if err != nil {
@@ -279,7 +284,7 @@ func (pppoe *PPPoE) Dial(ctx context.Context) error {
 	}()
 	var err error
 	padi := pppoe.buildPADI()
-	var pado, pads *Pkt
+	var pado, pads *Packet
 	pado, pppoe.acMAC, err = pppoe.getResponse(padi, CodePADO, etherconn.BroadCastMAC)
 	if err != nil {
 		return err
@@ -294,7 +299,7 @@ func (pppoe *PPPoE) Dial(ctx context.Context) error {
 	pppoe.logger.Info().Msg("Got PADS")
 	pppoe.logger.Debug().Msgf("PADS:\n%v", pads)
 	if pads.SessionID == 0 {
-		return fmt.Errorf("AC rejected,\n %v", pads.String())
+		return fmt.Errorf("AC rejected,\n %v", pads)
 	}
 	pppoe.sessionID = pads.SessionID
 	atomic.StoreUint32(pppoe.state, pppoeStateOpen)

@@ -1,15 +1,9 @@
 package pppoe
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // Code is the PPPoE msg code
 type Code uint8
-
-const (
-	pppoeVerType byte = 0x11
-)
 
 // List of PPPoE msg code
 const (
@@ -36,8 +30,9 @@ func (code Code) String() string {
 		return "PADS"
 	case CodePADT:
 		return "PADT"
+	default:
+		return fmt.Sprintf("unknown (%d)", code)
 	}
-	return fmt.Sprintf("unknown (%d)", code)
 }
 
 // TagType is the PPPoE tag type
@@ -103,8 +98,9 @@ func (tag TagType) String() string {
 		return "ACSystemError"
 	case TagTypeGenericError:
 		return "GenericError"
+	default:
+		return fmt.Sprintf("unknown (%d)", tag)
 	}
-	return fmt.Sprintf("unknown (%d)", tag)
 }
 
 // BBFSubTagNum is the BBF sub tag type
@@ -112,8 +108,8 @@ type BBFSubTagNum uint8
 
 // a list of BBF sub tag type
 const (
-	BBFSubTagNumCircuitID                      BBFSubTagNum = 1
-	BBFSubTagNumRemoteID                       BBFSubTagNum = 2
+	BBFSubTagNumCircuitID                      BBFSubTagNum = 0x01
+	BBFSubTagNumRemoteID                       BBFSubTagNum = 0x02
 	BBFSubTagActualDataRateUpstream            BBFSubTagNum = 0x81
 	BBFSubTagActualDataRateDownstream          BBFSubTagNum = 0x82
 	BBFSubTagMinimumDataRateUpstream           BBFSubTagNum = 0x83
@@ -171,6 +167,7 @@ func (t BBFSubTagNum) String() string {
 		return "DataLinkEncap"
 	case BBFSubTagIWFSessionFlag:
 		return "IWFSessionFlag"
+	default:
+		return fmt.Sprintf("unknown (%d)", t)
 	}
-	return fmt.Sprintf("unknown (%d)", t)
 }

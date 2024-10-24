@@ -13,7 +13,7 @@ func TestEncap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := new(Pkt)
+	p := new(Packet)
 	err = p.Parse(pktbytes)
 	if err != nil {
 		t.Fatal(err)
@@ -23,5 +23,4 @@ func TestEncap(t *testing.T) {
 	if pktstr != fmt.Sprintf("%x", newbuf) {
 		t.Fatalf("result of serialization doesn't matched expected result")
 	}
-
 }
