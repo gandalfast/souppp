@@ -15,148 +15,140 @@ import (
 	"net"
 )
 
-// TUNIF is the TUN interface for a opened PPP session
-type TUNIF struct {
-	intf                   *water.Interface
-	nlink                  netlink.Link
+// TUNInterface is the TUN interface for a opened PPP session
+type TUNInterface struct {
+	logger                 *zerolog.Logger
+	netInterface           *water.Interface
+	netLink                netlink.Link
 	sendChan               chan []byte
 	v4recvChan, v6recvChan chan []byte
-	maxFrameSize           int
-	logger                 *zerolog.Logger
-	ownV4Addr              net.IP
 }
 
-// DefaultMaxFrameSize is the default max PPP frame size could be received from the TUN interface
-const DefaultMaxFrameSize = 1500
+const (
+	// IPv4 header size: 20 bytes (min)
+	// IPv6 header size: 40 bytes
+	_minimumFrameSize = 20 //ipv4 header
 
-// NewTUNIf creates a new TUN interface the pppproto, using name as interface name, add ifv4addr to the TUN interface;
-// also creates an IPv6 link local address via v6ifid, set MTU to peermru;
-func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs []net.IP, v6ifid []byte, peermru uint16) (*TUNIF, error) {
-	var err error
-	r := new(TUNIF)
+	// _defaultMaxFrameSize is the default max PPP frame size could be received from the TUN interface
+	_defaultMaxFrameSize = 1500
+)
+
+// NewTUNIf creates a new TUN interface supporting PPP protocol.
+// The interface name must be specified in the parameters, and all the assigned addresses
+// are copied into the TUN interface.
+// MTU value is the value of peerMRU parameter.
+func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs []net.IP, peerMRU uint16) (tun *TUNInterface, err error) {
+	tun = new(TUNInterface)
 	cfg := water.Config{
 		DeviceType: water.TUN,
+		PlatformSpecificParams: water.PlatformSpecificParams{
+			Name: name,
+		},
 	}
-	cfg.Name = name
-	r.intf, err = water.New(cfg)
+
+	// Create TUN interface
+	tun.netInterface, err = water.New(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create TUN if %v, %w", cfg.Name, err)
+		return nil, fmt.Errorf("failed to create TUN interface %v, %w", cfg.Name, err)
 	}
-	r.nlink, _ = netlink.LinkByName(name)
-	err = netlink.LinkSetUp(r.nlink)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bring the TUN if %v up, %w", cfg.Name, err)
+
+	// Enable network link
+	tun.netLink, _ = netlink.LinkByName(cfg.Name)
+	if err := netlink.LinkSetUp(tun.netLink); err != nil {
+		return nil, fmt.Errorf("failed to bring the TUN interface %v up, %w", cfg.Name, err)
 	}
-	//add v4 addr
+
+	// Add remote address
 	for _, addr := range assignedAddrs {
 		if addr == nil {
 			continue
 		}
-		if !addr.IsUnspecified() {
-			plen := "128"
+		if !addr.IsUnspecified() && len(addr) > 0 {
+			var addressMask string
 			if addr.To4() != nil {
-				r.ownV4Addr = addr
-				plen = "32"
-				r.sendChan, r.v4recvChan = pppproto.Register(lcp.ProtoIPv4)
+				addressMask = "/32"
+				tun.sendChan, tun.v4recvChan = pppproto.Register(lcp.ProtoIPv4)
+			} else {
+				addressMask = "/128"
+				tun.sendChan, tun.v6recvChan = pppproto.Register(lcp.ProtoIPv6)
 			}
-			addrstr := fmt.Sprintf("%v/%v", addr, plen)
-			naddr, err := netlink.ParseAddr(addrstr)
+
+			addrString := addr.String() + addressMask
+			netAddr, err := netlink.ParseAddr(addrString)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse %v as IP addr, %w", addrstr, err)
+				return nil, fmt.Errorf("failed to parse %v as IP addr, %w", addrString, err)
 			}
-			err = netlink.AddrAdd(r.nlink, naddr)
+
+			// Add default remote route to the interface
+			err = netlink.AddrAdd(tun.netLink, netAddr)
 			if err != nil {
-				return nil, fmt.Errorf("failed to add addr %v, %w", addrstr, err)
+				return nil, fmt.Errorf("failed to add addr %v, %w", addrString, err)
 			}
 		}
 	}
-	// if !ifv4addr.IsUnspecified() && ifv4addr != nil {
-	// 	r.ownV4Addr = ifv4addr
-	// 	addrstr := fmt.Sprintf("%v/32", r.ownV4Addr)
-	// 	v4addr, err := netlink.ParseAddr(addrstr)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to parse %v as v4 addr, %w", addrstr, err)
-	// 	}
-	// 	err = netlink.AddrAdd(r.nlink, v4addr)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to add v4 addr %v, %w", addrstr, err)
-	// 	}
 
-	// 	r.sendChan, r.v4recvChan = pppproto.Register(lcp.ProtoIPv4)
-	// }
-	//add link local
-	if v6ifid != nil {
-		linklocaladdr := make([]byte, 16)
-		copy(linklocaladdr[:8], lcp.IPv6LinkLocalPrefix[:8])
-		copy(linklocaladdr[8:16], v6ifid[:8])
-		addrstr := fmt.Sprintf("%v/64", net.IP(linklocaladdr).To16().String())
-		lla, err := netlink.ParseAddr(addrstr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse %v as v6 addr, %w", addrstr, err)
-		}
-		lla.Scope = int(netlink.SCOPE_LINK)
-		err = netlink.AddrAdd(r.nlink, lla)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add v6 addr %v, %w", addrstr, err)
-		}
-		_, r.v6recvChan = pppproto.Register(lcp.ProtoIPv6)
-	}
-
-	//adjust mtu based on PPP peer's MRU
-	mtu := int(peermru)
+	// Adjust MTU based on PPP peer's MRU
+	mtu := int(peerMRU)
 	if mtu < 1280 {
 		mtu = 1280
 	}
-	netlink.LinkSetMTU(r.nlink, mtu)
+	_ = netlink.LinkSetMTU(tun.netLink, mtu)
 
-	r.maxFrameSize = DefaultMaxFrameSize
 	logger := pppproto.GetLogger().With().Str("Name", "datapath").Logger()
-	r.logger = &logger
-	go r.send(ctx)
-	go r.recv(ctx)
-	return r, nil
+	tun.logger = &logger
+	go tun.send(ctx)
+	go tun.recv(ctx)
+	return tun, nil
 }
 
-const minimalIPPktSize = 20 //ipv4 header
-
 // send pkt to outside network
-func (tif *TUNIF) send(ctx context.Context) {
+func (tif *TUNInterface) send(ctx context.Context) {
 	for {
-		b := make([]byte, tif.maxFrameSize)
-		n, err := tif.intf.Read(b)
+		// Read IPv4 / IPv6 packet to send from TUN interface
+		buf := make([]byte, _defaultMaxFrameSize)
+		n, err := tif.netInterface.Read(buf)
 		if err != nil {
-			tif.logger.Error().Err(err).Msg("failed to read")
+			tif.logger.Error().Err(err).Msg("failed to read net interface packet")
 			return
 		}
+		buf = buf[:n]
+
+		// Check if context is still valid
 		select {
 		case <-ctx.Done():
 			tif.logger.Info().Msg("send routine stopped")
-			tif.intf.Close()
+			_ = tif.netInterface.Close()
 			return
 		default:
 		}
-		if n < minimalIPPktSize {
+
+		// Packet is too small, discard
+		if n < _minimumFrameSize {
 			continue
 		}
-		switch b[0] >> 4 {
+
+		// Check Version value from IPv4 / IPv6 header, and encapsulate
+		// into PPP accordingly
+		switch buf[0] >> 4 {
 		case 4:
-			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(b[:n]), lcp.ProtoIPv4).Serialize()
+			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(buf[:n]), lcp.ProtoIPv4).Serialize()
 			if err == nil {
 				tif.sendChan <- pkt
 			}
 		case 6:
-			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(b[:n]), lcp.ProtoIPv6).Serialize()
+			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(buf[:n]), lcp.ProtoIPv6).Serialize()
 			if err == nil {
 				tif.sendChan <- pkt
 			}
 		default:
+			tif.logger.Info().Msg("unable to send packet with unknown IP version")
 			continue
 		}
 	}
 }
 
-// recv getting pkt from outside network
-func (tif *TUNIF) recv(ctx context.Context) {
+// recv gets packet from outside network
+func (tif *TUNInterface) recv(ctx context.Context) {
 	for {
 		var pktbytes []byte
 
@@ -165,16 +157,13 @@ func (tif *TUNIF) recv(ctx context.Context) {
 			tif.logger.Info().Msg("recv routine stopped")
 			return
 		case pktbytes = <-tif.v4recvChan:
-			// gpacket := gopacket.NewPacket(pktbytes, layers.LayerTypeIPv4, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
-			// tif.logger.Sugar().Debugf("got a v4 pkt from outside:\n%v", gpacket.String())
-
+			// Save data into pktbytes
 		case pktbytes = <-tif.v6recvChan:
-			// gpacket := gopacket.NewPacket(pktbytes, layers.LayerTypeIPv6, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
-			// tif.logger.Sugar().Debugf("got a v6 pkt from outside:\n%v", gpacket.String())
+			// Save data into pktbytes
 		}
-		_, err := tif.intf.Write(pktbytes)
-		if err != nil {
-			tif.logger.Error().Err(err).Msg("failed to send to TUN interface")
+
+		if _, err := tif.netInterface.Write(pktbytes); err != nil {
+			tif.logger.Error().Err(err).Msg("failed to send data to TUN interface")
 			return
 		}
 	}

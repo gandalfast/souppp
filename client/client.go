@@ -68,7 +68,7 @@ type ZouPPP struct {
 	cfg               *Config
 	pppoeProto        *pppoe.PPPoE
 	pppProto          *lcp.PPP
-	fastpath          *datapath.TUNIF
+	fastpath          *datapath.TUNInterface
 	createFastPathMux *sync.Mutex
 	lcpProto          *lcp.LCP
 	ipcpProto         *lcp.LCP
@@ -346,17 +346,8 @@ func (zou *ZouPPP) createDatapath(ctx context.Context) error {
 		mru = uint16(*(mruop.(*lcp.LCPOpMRU)))
 	}
 
-	var v6ifid []byte
-	if zou.ipv6cpProto != nil {
-		if ifidop := zou.ipv6cpProto.OwnRule.GetOption(uint8(lcp.IP6CPOpInterfaceIdentifier)); ifidop != nil {
-			ifid := [8]byte(*ifidop.(*lcp.InterfaceIDOption))
-			v6ifid = ifid[:]
-		}
-	}
-
 	zou.fastpath, err = datapath.NewTUNIf(ctx, zou.pppProto, zou.cfg.PPPIfName,
 		append(zou.assignedIANAs, zou.assignedV4Addr),
-		v6ifid,
 		mru,
 	)
 	if err != nil {
