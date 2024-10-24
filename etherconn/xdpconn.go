@@ -236,20 +236,19 @@ func (s *xdpSock) recv(ctx context.Context) {
 
 // XDPRelay is a PacketRelay implementation that uses AF_XDP Socket
 type XDPRelay struct {
-	sockList                                                                                    []*xdpSock
-	qIDList                                                                                     []int
-	bpfProg                                                                                     *xdp.Program
-	bpfEtypeMap                                                                                 *ebpf.Map
-	extBPFProgFileName, extBPFProgName, extBPFQMapName, extBPFSocketMapName, extBPFEtypeMapName string
-	toSendChan                                                                                  chan []byte
-	stopToSendChan                                                                              chan struct{}
-	recvList                                                                                    *ChanMap
-	wg                                                                                          *sync.WaitGroup
-	cancelFunc                                                                                  context.CancelFunc
-	recvTimeout                                                                                 time.Duration
-	multicastList                                                                               *ChanMap
-	perClntRecvChanDepth                                                                        uint
-	sendChanDepth                                                                               uint
+	sockList             []*xdpSock
+	qIDList              []int
+	bpfProg              *xdp.Program
+	bpfEtypeMap          *ebpf.Map
+	toSendChan           chan []byte
+	stopToSendChan       chan struct{}
+	recvList             *ChanMap
+	wg                   *sync.WaitGroup
+	cancelFunc           context.CancelFunc
+	recvTimeout          time.Duration
+	multicastList        *ChanMap
+	perClntRecvChanDepth uint
+	sendChanDepth        uint
 	//maxEtherFrameSize could only be 2048 or 4096
 	maxEtherFrameSize uint
 	umemNumofTrunk    uint
@@ -363,17 +362,6 @@ func WithXDPPerClntRecvChanDepth(depth uint) XDPRelayOption {
 	}
 }
 
-// WithXDPExtProg loads an external XDP kernel program iso using the built-in one
-func WithXDPExtProg(fname, prog, qmap, xskmap, etypemap string) XDPRelayOption {
-	return func(relay *XDPRelay) {
-		relay.extBPFProgFileName = fname
-		relay.extBPFProgName = prog
-		relay.extBPFQMapName = qmap
-		relay.extBPFSocketMapName = xskmap
-		relay.extBPFEtypeMapName = etypemap
-	}
-}
-
 const (
 	// DefaultXDPUMEMNumOfTrunk is the default number of UMEM trunks
 	DefaultXDPUMEMNumOfTrunk = 16384
@@ -400,7 +388,7 @@ func NewXDPRelay(parentctx context.Context, ifname string, options ...XDPRelayOp
 	if r.ifLink, err = netlink.LinkByName(ifname); err != nil {
 		return nil, err
 	}
-	err = SetPromisc(ifname)
+	err = setPromiscuousMode(ifname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set %v to Promisc mode,%w", ifname, err)
 
@@ -421,19 +409,11 @@ func NewXDPRelay(parentctx context.Context, ifname string, options ...XDPRelayOp
 		}
 	}
 	r.toSendChan = make(chan []byte, r.sendChanDepth)
-	if r.extBPFProgFileName == "" {
-		//using built-in program
-		if r.bpfProg, r.bpfEtypeMap, err = loadBuiltinEBPFProg(); err != nil {
-			return nil, fmt.Errorf("failed to create built-in xdp kernel program, %w", err)
-		}
-	} else {
-		//load external one
-		if r.bpfProg, r.bpfEtypeMap, err = loadExtEBPFProg(r.extBPFProgFileName,
-			r.extBPFProgName, r.extBPFQMapName,
-			r.extBPFSocketMapName, r.extBPFEtypeMapName); err != nil {
-			return nil, fmt.Errorf("failed to load xdp kernel program %v, %w", r.extBPFProgFileName, err)
-		}
+	// Use built-in eBPF program
+	if r.bpfProg, r.bpfEtypeMap, err = loadBuiltinEBPFProg(); err != nil {
+		return nil, fmt.Errorf("failed to create built-in xdp kernel program, %w", err)
 	}
+
 	//load EtherTypes into map
 	for _, et := range r.recvEtypes {
 		err = r.bpfEtypeMap.Put(et, uint16(1))
@@ -554,21 +534,31 @@ func (xr *XDPRelay) Deregister(ks []L2EndpointKey) {
 	xr.multicastList.DelList(list)
 }
 
-// GetStats returns the stats
-func (xr *XDPRelay) GetStats() *RelayPacketStats {
-	return xr.stats
+//go:embed xdpethfilter_kern.o
+var builtXDPProgBinary []byte
+
+func loadBuiltinEBPFProg() (*xdp.Program, *ebpf.Map, error) {
+	return loadEBPFProgViaReader(
+		bytes.NewReader(builtXDPProgBinary),
+		"xdp_redirect_func",
+		"qidconf_map",
+		"xsks_map",
+		"etype_list",
+	)
 }
 
 func loadEBPFProgViaReader(r io.ReaderAt, funcname, qidmapname, xskmapname, ethertypemap string) (*xdp.Program, *ebpf.Map, error) {
-	prog := new(xdp.Program)
 	spec, err := ebpf.LoadCollectionSpecFromReader(r)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	col, err := ebpf.NewCollection(spec)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	prog := new(xdp.Program)
 	var ok bool
 	if prog.Program, ok = col.Programs[funcname]; !ok {
 		return nil, nil, fmt.Errorf("can't find a function named %v", funcname)
@@ -579,47 +569,30 @@ func loadEBPFProgViaReader(r io.ReaderAt, funcname, qidmapname, xskmapname, ethe
 	if prog.Sockets, ok = col.Maps[xskmapname]; !ok {
 		return nil, nil, fmt.Errorf("can't find a socket map named %v", xskmapname)
 	}
+
 	var elist *ebpf.Map
 	if elist, ok = col.Maps[ethertypemap]; !ok {
-		return nil, nil, fmt.Errorf("can't find a socket map named %v", xskmapname)
+		return nil, nil, fmt.Errorf("can't find a ether list map named %v", ethertypemap)
 	}
 
 	return prog, elist, nil
 }
 
-//go:embed xdpethfilter_kern.o
-var builtXDPProgBinary []byte
-
-func loadBuiltinEBPFProg() (*xdp.Program, *ebpf.Map, error) {
-	return loadEBPFProgViaReader(bytes.NewReader(builtXDPProgBinary),
-		"xdp_redirect_func", "qidconf_map", "xsks_map", "etype_list")
-}
-
-func loadExtEBPFProg(fname, funcname, qidmapname, xskmapname, ethertypemap string) (*xdp.Program, *ebpf.Map, error) {
-	f, err := os.Open(fname)
+// setPromiscuousMode put the interface in Promisc mode
+func setPromiscuousMode(interfaceName string) error {
+	intf, err := net.InterfaceByName(interfaceName)
 	if err != nil {
-		return nil, nil, err
+		return fmt.Errorf("couldn't query interface %s: %s", interfaceName, err)
 	}
-	return loadEBPFProgViaReader(f,
-		funcname, qidmapname, xskmapname, ethertypemap)
-}
 
-// SetPromisc put the interface in Promisc mode
-func SetPromisc(ifname string) error {
-	intf, err := net.InterfaceByName(ifname)
-	if err != nil {
-		return fmt.Errorf("couldn't query interface %s: %s", ifname, err)
-	}
 	htons := func(data uint16) uint16 { return data<<8 | data>>8 }
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
 	if err != nil {
 		return fmt.Errorf("couldn't open packet socket: %s", err)
 	}
-	mreq := unix.PacketMreq{
+
+	return unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, unix.PACKET_ADD_MEMBERSHIP, &unix.PacketMreq{
 		Ifindex: int32(intf.Index),
 		Type:    unix.PACKET_MR_PROMISC,
-	}
-
-	opt := unix.PACKET_ADD_MEMBERSHIP
-	return unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, opt, &mreq)
+	})
 }
