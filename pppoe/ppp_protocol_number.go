@@ -1,234 +1,14 @@
-package lcp
+package pppoe
 
 import "fmt"
-
-// MsgCode is the LCP message Code
-type MsgCode uint8
-
-// LCP message codes
-const (
-	CodeConfigureRequest MsgCode = 1
-	CodeConfigureAck     MsgCode = 2
-	CodeConfigureNak     MsgCode = 3
-	CodeConfigureReject  MsgCode = 4
-	CodeTerminateRequest MsgCode = 5
-	CodeTerminateAck     MsgCode = 6
-	CodeCodeReject       MsgCode = 7
-	CodeProtocolReject   MsgCode = 8
-	CodeEchoRequest      MsgCode = 9
-	CodeEchoReply        MsgCode = 10
-	CodeDiscardRequest   MsgCode = 11
-)
-
-func (code MsgCode) String() string {
-	switch code {
-	case CodeConfigureRequest:
-		return "ConfReq"
-	case CodeConfigureAck:
-		return "ConfACK"
-	case CodeConfigureNak:
-		return "ConfNak"
-	case CodeConfigureReject:
-		return "ConfReject"
-	case CodeTerminateRequest:
-		return "TermReq"
-	case CodeTerminateAck:
-		return "TermACK"
-	case CodeCodeReject:
-		return "CodeReject"
-	case CodeProtocolReject:
-		return "ProtoReject"
-	case CodeEchoRequest:
-		return "EchoReq"
-	case CodeEchoReply:
-		return "EchoReply"
-	case CodeDiscardRequest:
-		return "DiscardReq"
-
-	}
-	return "unknown"
-}
-
-// LCPOptionType is the LCP option type
-type LCPOptionType uint8
-
-// LCP option types
-const (
-	OpTypeMaximumReceiveUnit                LCPOptionType = 1
-	OpTypeAuthenticationProtocol            LCPOptionType = 3
-	OpTypeQualityProtocol                   LCPOptionType = 4
-	OpTypeMagicNumber                       LCPOptionType = 5
-	OpTypeProtocolFieldCompression          LCPOptionType = 7
-	OpTypeAddressandControlFieldCompression LCPOptionType = 8
-)
-
-func (op LCPOptionType) String() string {
-	switch op {
-	case OpTypeMaximumReceiveUnit:
-		return "MRU"
-	case OpTypeAuthenticationProtocol:
-		return "AuthProto"
-	case OpTypeQualityProtocol:
-		return "QualityProto"
-	case OpTypeMagicNumber:
-		return "MagicNum"
-	case OpTypeProtocolFieldCompression:
-		return "ProtoFieldComp"
-	case OpTypeAddressandControlFieldCompression:
-		return "AddContrlFieldComp"
-	}
-	return fmt.Sprintf("unknown (%d)", uint8(op))
-}
-
-// State is the the LCP protocl state
-type State uint32
-
-// LCP protocol state as defined in RFC1661
-const (
-	StateInitial State = iota
-	StateStarting
-	StateClosed
-	StateStopped
-	StateClosing
-	StateStopping
-	StateReqSent
-	StateAckRcvd
-	StateAckSent
-	StateOpened
-	StateEchoReqSent
-)
-
-func (s State) String() string {
-	switch s {
-	case StateInitial:
-		return "Initial"
-	case StateStarting:
-		return "Starting"
-	case StateClosed:
-		return "Closed"
-	case StateStopped:
-		return "Stopped"
-	case StateClosing:
-		return "Closing"
-	case StateStopping:
-		return "Stopping"
-	case StateReqSent:
-		return "ReqSent"
-	case StateAckRcvd:
-		return "AckRcvd"
-	case StateAckSent:
-		return "AckSent"
-	case StateOpened:
-		return "Opened"
-	case StateEchoReqSent:
-		return "EchoReqSent"
-	}
-	return fmt.Sprintf("unknow (%d)", s)
-}
-
-// CHAPAuthAlg is the auth alg of CHAP
-type CHAPAuthAlg uint8
-
-// list of CHAP alg
-const (
-	AlgNone            CHAPAuthAlg = 0
-	AlgCHAPwithMD5     CHAPAuthAlg = 5
-	AlgSHA1            CHAPAuthAlg = 6
-	AlgCHAPwithSHA256  CHAPAuthAlg = 7
-	AlgCHAPwithSHA3256 CHAPAuthAlg = 8
-	AlgMSCHAP          CHAPAuthAlg = 128
-	AlgMSCHAP2         CHAPAuthAlg = 129
-)
-
-func (alg CHAPAuthAlg) String() string {
-	switch alg {
-	case AlgNone:
-		return ""
-	case AlgCHAPwithMD5:
-		return "AlgCHAPwithMD5"
-	case AlgSHA1:
-		return "AlgSHA1"
-	case AlgCHAPwithSHA256:
-		return "AlgCHAPwithSHA256"
-	case AlgCHAPwithSHA3256:
-		return "AlgCHAPwithSHA3256"
-	case AlgMSCHAP:
-		return "AlgMSCHAP"
-	case AlgMSCHAP2:
-		return "AlgMSCHAP2"
-	}
-	return fmt.Sprintf("unknown (%x)", uint8(alg))
-}
-
-// LayerNotifyEvent is the tlu/tld/tls/tlf event defined in RFC1661
-type LayerNotifyEvent uint8
-
-// list of LayerNotifyEvent
-const (
-	LCPLayerNotifyUp LayerNotifyEvent = iota
-	LCPLayerNotifyDown
-	LCPLayerNotifyStarted
-	LCPLayerNotifyFinished
-)
-
-func (n LayerNotifyEvent) String() string {
-	switch n {
-	case LCPLayerNotifyUp:
-		return "up"
-	case LCPLayerNotifyDown:
-		return "down"
-	case LCPLayerNotifyStarted:
-		return "started"
-	case LCPLayerNotifyFinished:
-		return "finished"
-	}
-	return fmt.Sprintf("unknown (%d)", n)
-}
-
-// IPCPOptionType is the option type for IPCP
-type IPCPOptionType uint8
-
-// list of IPCP option type
-const (
-	OpIPAddresses                IPCPOptionType = 1
-	OpIPCompressionProtocol      IPCPOptionType = 2
-	OpIPAddress                  IPCPOptionType = 3
-	OpMobileIPv4                 IPCPOptionType = 4
-	OpPrimaryDNSServerAddress    IPCPOptionType = 129
-	OpPrimaryNBNSServerAddress   IPCPOptionType = 130
-	OpSecondaryDNSServerAddress  IPCPOptionType = 131
-	OpSecondaryNBNSServerAddress IPCPOptionType = 132
-)
-
-func (o IPCPOptionType) String() string {
-	switch o {
-	case OpIPAddresses:
-		return "IPAddresses"
-	case OpIPCompressionProtocol:
-		return "IPCompressionProtocol"
-	case OpIPAddress:
-		return "IPAddress"
-	case OpMobileIPv4:
-		return "MobileIPv4"
-	case OpPrimaryDNSServerAddress:
-		return "PrimaryDNSServerAddress"
-	case OpPrimaryNBNSServerAddress:
-		return "PrimaryNBNSServerAddress"
-	case OpSecondaryDNSServerAddress:
-		return "SecondaryDNSServerAddress"
-	case OpSecondaryNBNSServerAddress:
-		return "SecondaryNBNSServerAddress"
-	}
-	return fmt.Sprintf("unknown (%d)", o)
-}
 
 // PPPProtocolNumber is the PPP protocol number
 type PPPProtocolNumber uint16
 
-// list of PPP protocol number
+// List of PPP protocol number
 const (
-	ProtoNone                                        PPPProtocolNumber = 0
-	ProtoPAD                                         PPPProtocolNumber = 0x1
+	ProtoNone                                        PPPProtocolNumber = 0x00
+	ProtoPAD                                         PPPProtocolNumber = 0x01
 	ProtoIPv4                                        PPPProtocolNumber = 0x21
 	ProtoIPv6                                        PPPProtocolNumber = 0x57
 	ProtoLCP                                         PPPProtocolNumber = 0xc021
@@ -237,8 +17,8 @@ const (
 	ProtoEAP                                         PPPProtocolNumber = 0xc227
 	ProtoIPCP                                        PPPProtocolNumber = 0x8021
 	ProtoIPv6CP                                      PPPProtocolNumber = 0x8057
-	ProtoROHCsmallCID                                PPPProtocolNumber = 0x3
-	ProtoROHClargeCID                                PPPProtocolNumber = 0x5
+	ProtoROHCsmallCID                                PPPProtocolNumber = 0x03
+	ProtoROHClargeCID                                PPPProtocolNumber = 0x05
 	ProtoOSINetworkLayer                             PPPProtocolNumber = 0x23
 	ProtoXeroxNSIDP                                  PPPProtocolNumber = 0x25
 	ProtoDECnetPhaseIV                               PPPProtocolNumber = 0x27
@@ -364,22 +144,279 @@ const (
 	ProtoProprietaryNodeIDAuthenticationProtocol     PPPProtocolNumber = 0xc481
 )
 
-// IPCP6OptionType is the option type for IPv6CP
-type IPCP6OptionType uint8
-
-// List of IPv6CP option type
-const (
-	IP6CPOpIPv6CompressionProtocol IPCP6OptionType = 0x2
-	IP6CPOpInterfaceIdentifier     IPCP6OptionType = 0x1
-)
-
-func (code IPCP6OptionType) String() string {
-	switch code {
-	case IP6CPOpIPv6CompressionProtocol:
-		return "IPv6CompressionProtocol"
-	case IP6CPOpInterfaceIdentifier:
-		return "InterfaceIdentifier"
+func (val PPPProtocolNumber) String() string {
+	switch val {
+	case ProtoAppleClientServerProtocol:
+		return "AppleClientServerProtocol"
+	case ProtoAppleClientServerProtocolControl:
+		return "AppleClientServerProtocolControl"
+	case ProtoAppleTalkEDDP:
+		return "AppleTalkEDDP"
+	case ProtoAppleTalkSmartBuffered:
+		return "AppleTalkSmartBuffered"
+	case ProtoAppletalk:
+		return "Appletalk"
+	case ProtoAppletalkControlProtocol:
+		return "AppletalkControlProtocol"
+	case ProtoAscomTimeplex:
+		return "AscomTimeplex"
+	case ProtoAscomTimeplexAlias:
+		return "AscomTimeplexAlias"
+	case ProtoBACPBandwidthAllocationControlProtocolAlias:
+		return "BACPBandwidthAllocationControlProtocolAlias"
+	case ProtoBAP:
+		return "BAP"
+	case ProtoBanyanVines:
+		return "BanyanVines"
+	case ProtoBanyanVinesControlProtocol:
+		return "BanyanVinesControlProtocol"
+	case ProtoBridgingNCP:
+		return "BridgingNCP"
+	case ProtoBridgingPDU:
+		return "BridgingPDU"
+	case ProtoCDPDMobileNetworkRegistrationProtocol:
+		return "CDPDMobileNetworkRegistrationProtocol"
+	case ProtoCHAP:
+		return "CHAP"
+	case ProtoCallBackControlProtocol:
+		return "CallBackControlProtocol"
+	case ProtoCetaceanNetworkDetectionProtocol:
+		return "CetaceanNetworkDetectionProtocol"
+	case ProtoCiscoDiscoveryProtocol:
+		return "CiscoDiscoveryProtocol"
+	case ProtoCiscoDiscoveryProtocolControl:
+		return "CiscoDiscoveryProtocolControl"
+	case ProtoCiscoSystems:
+		return "CiscoSystems"
+	case ProtoCiscoSystemsControlProtocol:
+		return "CiscoSystemsControlProtocol"
+	case ProtoCompresseddatagram:
+		return "Compresseddatagram"
+	case ProtoCompressionControlProtocol:
+		return "CompressionControlProtocol"
+	case ProtoContainerControlProtocol:
+		return "ContainerControlProtocol"
+	case ProtoCrayCommunicationsControlProtocol:
+		return "CrayCommunicationsControlProtocol"
+	case ProtoDCARemoteLan:
+		return "DCARemoteLan"
+	case ProtoDCARemoteLanNetworkControlProtocol:
+		return "DCARemoteLanNetworkControlProtocol"
+	case ProtoDECLANBridge100SpanningTree:
+		return "DECLANBridge100SpanningTree"
+	case ProtoDECnetPhaseIV:
+		return "DECnetPhaseIV"
+	case ProtoDECnetPhaseIVControlProtocol:
+		return "DECnetPhaseIVControlProtocol"
+	case ProtoDOCSISDLL:
+		return "DOCSISDLL"
+	case ProtoEAP:
+		return "EAP"
+	case ProtoEDPCPExtremeDiscoveryProtocolCtrlPrtcl:
+		return "EDPCPExtremeDiscoveryProtocolCtrlPrtcl"
+	case ProtoEDPExtremeDiscoveryProtocol:
+		return "EDPExtremeDiscoveryProtocol"
+	case ProtoETSITETRANetworkProtocolType1:
+		return "ETSITETRANetworkProtocolType1"
+	case ProtoETSITETRATNP1ControlProtocol:
+		return "ETSITETRATNP1ControlProtocol"
+	case ProtoEncryption:
+		return "Encryption"
+	case ProtoEncryptionControlProtocol:
+		return "EncryptionControlProtocol"
+	case ProtoExpandacceleratorprotocol:
+		return "Expandacceleratorprotocol"
+	case ProtoFibreChannel:
+		return "FibreChannel"
+	case ProtoFujitsuLBLBControlProtocol:
+		return "FujitsuLBLBControlProtocol"
+	case ProtoFujitsuLinkBackupandLoadBalancing:
+		return "FujitsuLinkBackupandLoadBalancing"
+	case ProtoHelloPackets8021d:
+		return "HelloPackets8021d"
+	case ProtoIBMSourceRoutingBPDU:
+		return "IBMSourceRoutingBPDU"
+	case ProtoIEEEp12844standardProtocolControl:
+		return "IEEEp12844standardProtocolControl"
+	case ProtoIEEEp12844standarddatapackets:
+		return "IEEEp12844standarddatapackets"
+	case ProtoIP6HeaderCompressionControlProtocol:
+		return "IP6HeaderCompressionControlProtocol"
+	case ProtoIPCP:
+		return "IPCP"
+	case ProtoIPv4:
+		return "IPv4"
+	case ProtoIPv6:
+		return "IPv6"
+	case ProtoIPv6CP:
+		return "IPv6CP"
+	case ProtoIPv6HeaderCompression:
+		return "IPv6HeaderCompression"
+	case ProtoIndividualLinkEncryption:
+		return "IndividualLinkEncryption"
+	case ProtoIndividualLinkEncryptionControlProtocol:
+		return "IndividualLinkEncryptionControlProtocol"
+	case ProtoKNXBridgingControlProtocol:
+		return "KNXBridgingControlProtocol"
+	case ProtoKNXBridgingData:
+		return "KNXBridgingData"
+	case ProtoLCP:
+		return "LCP"
+	case ProtoLinkQualityReport:
+		return "LinkQualityReport"
+	case ProtoLuxcom:
+		return "Luxcom"
+	case ProtoMPLSCP:
+		return "MPLSCP"
+	case ProtoMPLSMulticast:
+		return "MPLSMulticast"
+	case ProtoMPLSUnicast:
+		return "MPLSUnicast"
+	case ProtoMPPlus:
+		return "MPPlus"
+	case ProtoMPPlusControlProtocol:
+		return "MPPlusControlProtocol"
+	case ProtoMitsubishiSecurityInfoExchPtcl:
+		return "MitsubishiSecurityInfoExchPtcl"
+	case ProtoMultiLink:
+		return "MultiLink"
+	case ProtoMultiLinkControlProtocol:
+		return "MultiLinkControlProtocol"
+	case ProtoMultichannelFlowTreatmentProtocol:
+		return "MultichannelFlowTreatmentProtocol"
+	case ProtoMultichannelFlowTreatmentProtocolAlias:
+		return "MultichannelFlowTreatmentProtocolAlias"
+	case ProtoNETBIOSFraming:
+		return "NETBIOSFraming"
+	case ProtoNETBIOSFramingControlProtocol:
+		return "NETBIOSFramingControlProtocol"
+	case ProtoNTCITSIPI:
+		return "NTCITSIPI"
+	case ProtoNTCITSIPIControlProtocol:
+		return "NTCITSIPIControlProtocol"
+	case ProtoNetcsTwinRouting:
+		return "NetcsTwinRouting"
+	case ProtoNetcsTwinRoutingAlias:
+		return "NetcsTwinRoutingAlias"
+	case ProtoNone:
+		return "None"
+	case ProtoNovellIPX:
+		return "NovellIPX"
+	case ProtoNovellIPXControlProtocol:
+		return "NovellIPXControlProtocol"
+	case ProtoODSICPNCP:
+		return "ODSICPNCP"
+	case ProtoOSINetworkLayer:
+		return "OSINetworkLayer"
+	case ProtoOSINetworkLayerControlProtocol:
+		return "OSINetworkLayerControlProtocol"
+	case ProtoOpenDOF:
+		return "OpenDOF"
+	case ProtoOpticalSupervisoryChannelProtocol:
+		return "OpticalSupervisoryChannelProtocol"
+	case ProtoOpticalSupervisoryChannelProtocolAlias:
+		return "OpticalSupervisoryChannelProtocolAlias"
+	case ProtoPAD:
+		return "PAD"
+	case ProtoPAP:
+		return "PAP"
+	case ProtoPPPMuxing:
+		return "PPPMuxing"
+	case ProtoPPPMuxingControlProtocol:
+		return "PPPMuxingControlProtocol"
+	case ProtoProprietaryAuthenticationProtocol:
+		return "ProprietaryAuthenticationProtocol"
+	case ProtoProprietaryAuthenticationProtocolAlias:
+		return "ProprietaryAuthenticationProtocolAlias"
+	case ProtoProprietaryNodeIDAuthenticationProtocol:
+		return "ProprietaryNodeIDAuthenticationProtocol"
+	case ProtoROHClargeCID:
+		return "ROHClargeCID"
+	case ProtoROHCsmallCID:
+		return "ROHCsmallCID"
+	case ProtoRSAAuthenticationProtocol:
+		return "RSAAuthenticationProtocol"
+	case ProtoRTPIPHCCompressedNonTCP:
+		return "RTPIPHCCompressedNonTCP"
+	case ProtoRTPIPHCCompressedRTP16:
+		return "RTPIPHCCompressedRTP16"
+	case ProtoRTPIPHCCompressedRTP8:
+		return "RTPIPHCCompressedRTP8"
+	case ProtoRTPIPHCCompressedTCP:
+		return "RTPIPHCCompressedTCP"
+	case ProtoRTPIPHCCompressedTCPNoDelta:
+		return "RTPIPHCCompressedTCPNoDelta"
+	case ProtoRTPIPHCCompressedUDP16:
+		return "RTPIPHCCompressedUDP16"
+	case ProtoRTPIPHCCompressedUDP8:
+		return "RTPIPHCCompressedUDP8"
+	case ProtoRTPIPHCContextState:
+		return "RTPIPHCContextState"
+	case ProtoRTPIPHCFullHeader:
+		return "RTPIPHCFullHeader"
+	case ProtoRefTekProtocol:
+		return "RefTekProtocol"
+	case ProtoSNA:
+		return "SNA"
+	case ProtoSNAControlProtocol:
+		return "SNAControlProtocol"
+	case ProtoSNAover802:
+		return "SNAover802"
+	case ProtoSNAover802Control:
+		return "SNAover802Control"
+	case ProtoSTPControlProtocol:
+		return "STPControlProtocol"
+	case ProtoSTPScheduledTransferProtocol:
+		return "STPScheduledTransferProtocol"
+	case ProtoSerialDataControlProtocol:
+		return "SerialDataControlProtocol"
+	case ProtoSerialDataTransportProtocol:
+		return "SerialDataTransportProtocol"
+	case ProtoShivaPasswordAuthenticationProtocol:
+		return "ShivaPasswordAuthenticationProtocol"
+	case ProtoSigmaNetworkSystems:
+		return "SigmaNetworkSystems"
+	case ProtoSinglelinkcompressioninmultilink:
+		return "Singlelinkcompressioninmultilink"
+	case ProtoStackerLZS:
+		return "StackerLZS"
+	case ProtoStampedeBridging:
+		return "StampedeBridging"
+	case ProtoStampedeBridgingAuthorizationProtocol:
+		return "StampedeBridgingAuthorizationProtocol"
+	case ProtoStampedeBridgingControlProtocol:
+		return "StampedeBridgingControlProtocol"
+	case ProtoStreamProtocol:
+		return "StreamProtocol"
+	case ProtoStreamProtocolControlProtocol:
+		return "StreamProtocolControlProtocol"
+	case ProtoTRILLLinkStateProtocol:
+		return "TRILLLinkStateProtocol"
+	case ProtoTRILLNetworkControlProtocol:
+		return "TRILLNetworkControlProtocol"
+	case ProtoTRILLNetworkProtocol:
+		return "TRILLNetworkProtocol"
+	case ProtoUnassigned:
+		return "Unassigned"
+	case ProtoVanJacobsonCompressedTCPIP:
+		return "VanJacobsonCompressedTCPIP"
+	case ProtoVanJacobsonUncompressedTCPIP:
+		return "VanJacobsonUncompressedTCPIP"
+	case ProtoVendorSpecificAuthenticationProtocol:
+		return "VendorSpecificAuthenticationProtocol"
+	case ProtoVendorSpecificNetworkControlProtocol:
+		return "VendorSpecificNetworkControlProtocol"
+	case ProtoVendorSpecificNetworkProtocol:
+		return "VendorSpecificNetworkProtocol"
+	case ProtoVendorSpecificProtocol:
+		return "VendorSpecificProtocol"
+	case ProtoXeroxNSIDP:
+		return "XeroxNSIDP"
+	case ProtoXeroxNSIDPControlProtocol:
+		return "XeroxNSIDPControlProtocol"
+	case Protosinglelinkcompressioninmultilinkcontrol:
+		return "singlelinkcompressioninmultilinkcontrol"
 	default:
-		return fmt.Sprintf("unknown (%d)", code)
+		return fmt.Sprintf("unknown (%d)", uint16(val))
 	}
 }

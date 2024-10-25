@@ -1,4 +1,4 @@
-package lcp
+package pppoe
 
 type Serializer interface {
 	Serialize() ([]byte, error)
