@@ -2,10 +2,25 @@ package pppoe
 
 import "fmt"
 
-// Code is the PPPoE msg code
+const (
+	// EtherTypePPPoESession is the Ether type for PPPoE session pkt
+	EtherTypePPPoESession = 0x8864
+	// EtherTypePPPoEDiscovery is the Ether type for PPPoE discovery pkt
+	EtherTypePPPoEDiscovery = 0x8863
+)
+
+// List of PPPoE connection states
+const (
+	pppoeStateInitial = iota
+	pppoeStateDialing
+	pppoeStateOpen
+	pppoeStateClosed
+)
+
+// Code is PPPoE msg code
 type Code uint8
 
-// List of PPPoE msg code
+// List of PPPoE msg codes
 const (
 	CodeSession Code = 0x00
 	CodePADO    Code = 0x07
@@ -15,7 +30,6 @@ const (
 	CodePADT    Code = 0xA7
 )
 
-// String return a string representation of code
 func (code Code) String() string {
 	switch code {
 	case CodeSession:
@@ -38,7 +52,7 @@ func (code Code) String() string {
 // TagType is the PPPoE tag type
 type TagType uint16
 
-// a list of PPPoE tag type
+// List of PPPoE tag types
 const (
 	TagTypeEndOfList         TagType = 0
 	TagTypeServiceName       TagType = 257
@@ -106,7 +120,7 @@ func (tag TagType) String() string {
 // BBFSubTagNum is the BBF sub tag type
 type BBFSubTagNum uint8
 
-// a list of BBF sub tag type
+// List of BBF sub tag types
 const (
 	BBFSubTagNumCircuitID                      BBFSubTagNum = 0x01
 	BBFSubTagNumRemoteID                       BBFSubTagNum = 0x02
@@ -128,7 +142,6 @@ const (
 	BBFSubTagIWFSessionFlag                    BBFSubTagNum = 0xFE
 )
 
-// String returns a string representation of t
 func (t BBFSubTagNum) String() string {
 	switch t {
 	case BBFSubTagNumCircuitID:

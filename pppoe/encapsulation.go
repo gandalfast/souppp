@@ -9,7 +9,7 @@ import (
 const _maxTags = 32
 
 // First byte of the PPPoE packet
-const pppoeVerType byte = 0x11
+const _pppoeVersionType byte = 0x11
 
 // Packet represents a PPPoE packet
 type Packet struct {
@@ -28,7 +28,7 @@ func (pkt *Packet) Parse(buf []byte) error {
 	}
 
 	pkt.Vertype = buf[0]
-	if pkt.Vertype != pppoeVerType {
+	if pkt.Vertype != _pppoeVersionType {
 		return fmt.Errorf("invalid PPPoE version type, should be 0x11, got 0x%X ", pkt.Vertype)
 	}
 	pkt.Code = Code(buf[1])
@@ -83,14 +83,14 @@ func (pkt *Packet) Serialize() ([]byte, error) {
 	}
 
 	header := make([]byte, 6)
-	header[0] = pppoeVerType
+	header[0] = _pppoeVersionType
 	header[1] = byte(pkt.Code)
 	binary.BigEndian.PutUint16(header[2:4], pkt.SessionID)
 	binary.BigEndian.PutUint16(header[4:6], uint16(len(payload)))
 	return append(header, payload...), nil
 }
 
-// GetTag return a slice of tag with type t
+// GetTag return a slice of tags of type t
 func (pkt *Packet) GetTag(t TagType) (r []Tag) {
 	for _, tag := range pkt.Tags {
 		if tag.Type() == uint16(t) {

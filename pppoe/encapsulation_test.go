@@ -1,4 +1,3 @@
-// pppoe_test
 package pppoe
 
 import (
