@@ -111,9 +111,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/gopacket/layers"
@@ -812,67 +810,4 @@ func (ruc *RUDPConn) SetAddr(src *net.UDPAddr) {
 	ruc.addrLock.Lock()
 	defer ruc.addrLock.Unlock()
 	ruc.localAddress = src
-}
-
-// RelayPacketStats is the PacketRelay's forwding stats;
-// use atomic.LoadUint64 to read the values
-type RelayPacketStats struct {
-	// Tx is number of pkts sent successfully
-	Tx *uint64
-	// RxOffered is number of pkts relay get from interface
-	RxOffered *uint64
-	// RxInvalid is nunber of pkts relay get but ignored due to failed valid check
-	RxInvalid *uint64
-	// RxBufferFull is the number of pkts can't send to receiver's channel right away due to it is full
-	RxBufferFull *uint64
-	// RxMiss is the number of pkts relay can't find receiver
-	RxMiss *uint64
-	// Rx is the number of pkts relay successfully deliver to receiver, not including pkt sent to default channel
-	Rx *uint64
-	// RxDefault is the number of pkts relay deliver to the default rcv channel
-	RxDefault *uint64
-	// RxNonHitMulticast is the number of multicast pkts that doesn't have direct receiver, but deliver to a multicast recevier
-	RxNonHitMulticast *uint64
-	// RxMulticastIgnored is the number of multicast pkts ignored
-	RxMulticastIgnored *uint64
-}
-
-func newRelayPacketStats() *RelayPacketStats {
-	rps := new(RelayPacketStats)
-	rps.Tx = new(uint64)
-	rps.RxOffered = new(uint64)
-	rps.RxInvalid = new(uint64)
-	rps.RxBufferFull = new(uint64)
-	rps.RxMiss = new(uint64)
-	rps.Rx = new(uint64)
-	rps.RxDefault = new(uint64)
-	rps.RxNonHitMulticast = new(uint64)
-	rps.RxMulticastIgnored = new(uint64)
-	return rps
-}
-
-func (rps RelayPacketStats) String() string {
-	rs := ""
-	val := reflect.ValueOf(rps)
-	for i := 0; i < val.NumField(); i++ {
-		rs += fmt.Sprintf("%v:%v\n", val.Type().Field(i).Name, atomic.LoadUint64(val.FieldByIndex([]int{i}).Interface().(*uint64)))
-		// rs += fmt.Sprintf("%v:%v\n", val.Type().Field(i).Name, atomic.LoadUint64(reflect.Indirect(val.FieldByIndex([]int{i})).Interface().(uint64)))
-	}
-	return rs
-}
-
-// buildPCAPFilterStrForEtherType return a PCAP filter string to filter
-// all EtherType in etypes, include no tag, one tag and two tag
-func buildPCAPFilterStrForEtherType(etypes []uint16) string {
-	s := ""
-	i := 0
-	for _, t := range etypes {
-		s += fmt.Sprintf("0x%x", t)
-		if i < len(etypes)-1 {
-			s += " or "
-		}
-		i++
-	}
-	//NOTE: it seems the order of these 2 parts are important, otherwise qinq won't be capatured
-	return fmt.Sprintf("(ether proto %s) or  (vlan and ether proto %s)", s, s)
 }

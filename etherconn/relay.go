@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"sync/atomic"
 )
 
 type RelayType string
@@ -23,7 +22,7 @@ func checkPacketBytes(p []byte) error {
 	return nil
 }
 
-func sendToChanWithCounter(receival *RelayReceival, ch chan *RelayReceival, counter, fullcounter *uint64) {
+func sendToChanWithCounter(receival *RelayReceival, ch chan *RelayReceival) {
 	fullcounted := false
 	if len(receival.EtherPayloadBytes) == 0 {
 		return
@@ -31,13 +30,11 @@ func sendToChanWithCounter(receival *RelayReceival, ch chan *RelayReceival, coun
 	for { //keep sending until pkt is sent to channel
 		select {
 		case ch <- receival:
-			atomic.AddUint64(counter, 1)
 			return
 		default:
 			<-ch //channel is full, remove the oldest pkt in channel
 			if !fullcounted {
 				log.Printf("recv chan has cap of %d and len %d\n", cap(ch), len(ch))
-				atomic.AddUint64(fullcounter, 1)
 				fullcounted = true
 			}
 		}
@@ -89,14 +86,12 @@ func getReceivalFromRcvPkt(p []byte, auxdata []interface{}, relayType RelayType)
 }
 
 // handleRcvPkt is the function handle the received pkt from underlying socket, it is shared code for both RawPacketRelay and XDPPacketRelay
-func handleRcvPkt(relayType RelayType, pktData []byte, stats *RelayPacketStats,
+func handleRcvPkt(relayType RelayType, pktData []byte,
 	logf LogFunc, recvList *ChanMap, mirrorToDefault bool,
 	defaultRecvChan chan *RelayReceival, multicastList *ChanMap,
 	ancData []interface{},
 ) {
-	atomic.AddUint64(stats.RxOffered, 1)
 	if checkPacketBytes(pktData) != nil {
-		atomic.AddUint64(stats.RxInvalid, 1)
 		return
 	}
 
@@ -109,9 +104,9 @@ func handleRcvPkt(relayType RelayType, pktData []byte, stats *RelayPacketStats,
 		// found match etherconn
 		//NOTE: create go routine here since sendToChanWithCounter will parse the pkt, need some CPU
 		//NOTE2: update @ 10/15/2021, remove creating go routine, since it will create out-of-order issue
-		sendToChanWithCounter(recvial, rcvchan, stats.Rx, stats.RxBufferFull)
+		sendToChanWithCounter(recvial, rcvchan)
 		if mirrorToDefault && defaultRecvChan != nil {
-			sendToChanWithCounter(recvial, defaultRecvChan, stats.RxDefault, stats.RxBufferFull)
+			sendToChanWithCounter(recvial, defaultRecvChan)
 		}
 	} else {
 		//TODO: could use an optimization here, where parsing only done once iso calling sendToChanWithCounter multiple times
@@ -120,35 +115,29 @@ func handleRcvPkt(relayType RelayType, pktData []byte, stats *RelayPacketStats,
 			zeroMList := false
 			if len(mList) > 0 {
 				for _, mrcvchan := range mList {
-					//TODO: really need copy here?
-					newbuf := make([]byte, len(pktData))
-					copy(newbuf, pktData)
-					recvial.EtherBytes = newbuf
+					recvial.EtherBytes = pktData
 					//TODO: might need also a new gpacket here
-					sendToChanWithCounter(recvial, mrcvchan, stats.RxNonHitMulticast, stats.RxBufferFull)
+					sendToChanWithCounter(recvial, mrcvchan)
 				}
 			} else {
 				zeroMList = true
 			}
 			if defaultRecvChan != nil {
-				sendToChanWithCounter(recvial, defaultRecvChan, stats.RxDefault, stats.RxBufferFull)
-
+				sendToChanWithCounter(recvial, defaultRecvChan)
 			} else {
 				if zeroMList {
 					if logf != nil {
 						logf("ignored a multicast pkt")
 					}
-					atomic.AddUint64(stats.RxMulticastIgnored, 1)
 				}
 			}
 		} else { //unicast but can't find reciver
 			if defaultRecvChan != nil {
-				sendToChanWithCounter(recvial, defaultRecvChan, stats.RxDefault, stats.RxBufferFull)
+				sendToChanWithCounter(recvial, defaultRecvChan)
 			} else {
 				if logf != nil {
 					logf(fmt.Sprintf("can't find match l2ep %v", recvial.LocalEndpoint.GetKey().String()))
 				}
-				atomic.AddUint64(stats.RxMiss, 1)
 			}
 		}
 	}

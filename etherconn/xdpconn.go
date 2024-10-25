@@ -20,8 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
-
 	"syscall"
 	"time"
 
@@ -164,9 +162,7 @@ func (s *xdpSock) send(ctx context.Context, mode XDPSendingMode) {
 			return
 		} else {
 			s.relay.log("xdp sock %d sent %d", s.qid, snum)
-			atomic.AddUint64(s.relay.stats.Tx, uint64(snum))
 		}
-
 	}
 }
 
@@ -225,7 +221,7 @@ func (s *xdpSock) recv(ctx context.Context) {
 					// if s.relay.rxh != nil {
 					// 	s.relay.rxh(pktData, s.qid)
 					// }
-					handleRcvPkt(UnknownRelay, pktData, s.relay.stats, logf,
+					handleRcvPkt(UnknownRelay, pktData, logf,
 						s.relay.recvList, s.relay.mirrorToDefault,
 						s.relay.defaultRecvChan, s.relay.multicastList, nil)
 				}
@@ -252,7 +248,6 @@ type XDPRelay struct {
 	//maxEtherFrameSize could only be 2048 or 4096
 	maxEtherFrameSize uint
 	umemNumofTrunk    uint
-	stats             *RelayPacketStats
 	logger            *log.Logger
 	ifName            string
 	ifLink            netlink.Link
@@ -379,7 +374,6 @@ func NewXDPRelay(parentctx context.Context, ifname string, options ...XDPRelayOp
 		umemNumofTrunk:       DefaultXDPUMEMNumOfTrunk,
 		recvList:             NewChanMap(),
 		multicastList:        NewChanMap(),
-		stats:                newRelayPacketStats(),
 		wg:                   new(sync.WaitGroup),
 		sendingMode:          XDPSendingModeSingle,
 		recvEtypes:           DefaultEtherTypes,
@@ -491,7 +485,6 @@ func (xr *XDPRelay) Stop() {
 	case <-done:
 	case <-ticker.C:
 	}
-	xr.log(fmt.Sprintf("XDPRelay stats:\n%v", xr.stats.String()))
 }
 
 // IfName implements PacketRelay interface;
