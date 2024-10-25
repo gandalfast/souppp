@@ -18,8 +18,14 @@ const (
 	_sendChanDepth  = 32
 )
 
-// _maxPPPMsgSize specifies max length of a received PPP packet
-const _maxPPPMsgSize = 1500
+const (
+	// IPv4 header size: 20 bytes (min)
+	// IPv6 header size: 40 bytes
+	MinimumFrameSize = 20
+
+	// MaxPPPMsgSize specifies max length of a received PPP packet
+	MaxPPPMsgSize = 1500
+)
 
 // PPP represents the PPP protocol (built over PPPoE for usage over ethernet)
 type PPP struct {
@@ -38,16 +44,19 @@ type PPP struct {
 }
 
 // NewPPP creates a new PPP protocol instance, using conn as underlying transport, l as Logger;
-func NewPPP(ctx context.Context, conn net.PacketConn, l *zerolog.Logger, generateReject func(b []byte) *Packet) *PPP {
+func NewPPP(conn net.PacketConn, l *zerolog.Logger, generateReject func(b []byte) *Packet) *PPP {
 	r := new(PPP)
 	r.Logger = l
 	r.relayChanList = make(map[ProtocolNumber]chan []byte)
 	r.sendChan = make(chan []byte, _sendChanDepth)
 	r.conn = conn
 	r.generateReject = generateReject
-	go r.receive(ctx)
-	go r.send(ctx)
 	return r
+}
+
+func (ppp *PPP) Start(ctx context.Context) {
+	go ppp.receive(ctx)
+	go ppp.send(ctx)
 }
 
 // Register a new protocol over PPP.
@@ -107,7 +116,7 @@ func (ppp *PPP) send(ctx context.Context) {
 
 func (ppp *PPP) receive(ctx context.Context) {
 	for {
-		buf := make([]byte, _maxPPPMsgSize)
+		buf := make([]byte, MaxPPPMsgSize)
 		_ = ppp.conn.SetReadDeadline(time.Now().Add(_readTimeout))
 		n, _, err := ppp.conn.ReadFrom(buf)
 

@@ -1,4 +1,4 @@
-package pppoe
+package ppp
 
 type Serializer interface {
 	Serialize() ([]byte, error)
