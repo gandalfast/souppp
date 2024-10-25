@@ -8,13 +8,11 @@ import (
 	"github.com/gandalfast/zouppp/auth/pap"
 	"github.com/gandalfast/zouppp/datapath"
 	"github.com/gandalfast/zouppp/etherconn"
-	"github.com/gandalfast/zouppp/myaddr"
 	"github.com/gandalfast/zouppp/mywg"
 	"github.com/gandalfast/zouppp/pppoe"
 	"github.com/gandalfast/zouppp/pppoe/lcp"
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"github.com/rs/zerolog"
-	"math/big"
 	"net"
 	"os"
 	"strings"
@@ -617,7 +615,7 @@ func GenClientConfigurations(setup *Setup) ([]*Config, error) {
 		//assign mac
 		ccfg.Mac = clntmac
 		if i > 0 {
-			ccfg.Mac, err = myaddr.IncMACAddr(clntmac, big.NewInt(int64(setup.MacStep)))
+			ccfg.Mac, err = incrementMACAddress(clntmac, int64(setup.MacStep))
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate mac address,%v", err)
 			}
