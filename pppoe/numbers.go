@@ -7,12 +7,12 @@ type Code uint8
 
 // List of PPPoE msg code
 const (
-	CodeSession Code = 0
-	CodePADO    Code = 7
-	CodePADI    Code = 9
-	CodePADR    Code = 25
-	CodePADS    Code = 101
-	CodePADT    Code = 167
+	CodeSession Code = 0x00
+	CodePADO    Code = 0x07
+	CodePADI    Code = 0x09
+	CodePADR    Code = 0x19
+	CodePADS    Code = 0x65
+	CodePADT    Code = 0xA7
 )
 
 // String return a string representation of code
