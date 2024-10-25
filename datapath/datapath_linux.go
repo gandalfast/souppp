@@ -8,7 +8,7 @@ package datapath
 import (
 	"context"
 	"fmt"
-	"github.com/gandalfast/zouppp/pppoe/lcp"
+	"github.com/gandalfast/zouppp/ppp"
 	"github.com/rs/zerolog"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
@@ -24,20 +24,11 @@ type TUNInterface struct {
 	v4recvChan, v6recvChan chan []byte
 }
 
-const (
-	// IPv4 header size: 20 bytes (min)
-	// IPv6 header size: 40 bytes
-	_minimumFrameSize = 20 //ipv4 header
-
-	// _defaultMaxFrameSize is the default max PPP frame size could be received from the TUN interface
-	_defaultMaxFrameSize = 1500
-)
-
 // NewTUNIf creates a new TUN interface supporting PPP protocol.
 // The interface name must be specified in the parameters, and all the assigned addresses
 // are copied into the TUN interface.
 // MTU value is the value of peerMRU parameter.
-func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs []net.IP, peerMRU uint16) (tun *TUNInterface, err error) {
+func NewTUNIf(ctx context.Context, pppproto *ppp.PPP, name string, assignedAddrs []net.IP, peerMRU uint16) (tun *TUNInterface, err error) {
 	tun = new(TUNInterface)
 	cfg := water.Config{
 		DeviceType: water.TUN,
@@ -67,10 +58,10 @@ func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs
 			var addressMask string
 			if addr.To4() != nil {
 				addressMask = "/32"
-				tun.sendChan, tun.v4recvChan = pppproto.Register(lcp.ProtoIPv4)
+				tun.sendChan, tun.v4recvChan = pppproto.Register(ppp.ProtoIPv4)
 			} else {
 				addressMask = "/128"
-				tun.sendChan, tun.v6recvChan = pppproto.Register(lcp.ProtoIPv6)
+				tun.sendChan, tun.v6recvChan = pppproto.Register(ppp.ProtoIPv6)
 			}
 
 			addrString := addr.String() + addressMask
@@ -94,7 +85,7 @@ func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs
 	}
 	_ = netlink.LinkSetMTU(tun.netLink, mtu)
 
-	logger := pppproto.GetLogger().With().Str("Name", "datapath").Logger()
+	logger := pppproto.Logger.With().Str("Name", "datapath").Logger()
 	tun.logger = &logger
 	go tun.send(ctx)
 	go tun.recv(ctx)
@@ -105,7 +96,7 @@ func NewTUNIf(ctx context.Context, pppproto *lcp.PPP, name string, assignedAddrs
 func (tif *TUNInterface) send(ctx context.Context) {
 	for {
 		// Read IPv4 / IPv6 packet to send from TUN interface
-		buf := make([]byte, _defaultMaxFrameSize)
+		buf := make([]byte, ppp.MaxPPPMsgSize)
 		n, err := tif.netInterface.Read(buf)
 		if err != nil {
 			tif.logger.Error().Err(err).Msg("failed to read net interface packet")
@@ -123,7 +114,7 @@ func (tif *TUNInterface) send(ctx context.Context) {
 		}
 
 		// Packet is too small, discard
-		if n < _minimumFrameSize {
+		if n < ppp.MinimumFrameSize {
 			continue
 		}
 
@@ -131,12 +122,12 @@ func (tif *TUNInterface) send(ctx context.Context) {
 		// into PPP accordingly
 		switch buf[0] >> 4 {
 		case 4:
-			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(buf[:n]), lcp.ProtoIPv4).Serialize()
+			pkt, err := ppp.NewPacket(ppp.NewStaticSerializer(buf[:n]), ppp.ProtoIPv4).Serialize()
 			if err == nil {
 				tif.sendChan <- pkt
 			}
 		case 6:
-			pkt, err := lcp.NewPPPPkt(lcp.NewStaticSerializer(buf[:n]), lcp.ProtoIPv6).Serialize()
+			pkt, err := ppp.NewPacket(ppp.NewStaticSerializer(buf[:n]), ppp.ProtoIPv6).Serialize()
 			if err == nil {
 				tif.sendChan <- pkt
 			}
