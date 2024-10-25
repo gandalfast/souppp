@@ -23,12 +23,11 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/asavie/xdp"
 	"github.com/cilium/ebpf"
 	"github.com/safchain/ethtool"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 // XDPSendingMode is the TX mode of XDPRelay

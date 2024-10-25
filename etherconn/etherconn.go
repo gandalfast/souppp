@@ -113,8 +113,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/google/gopacket/layers"
 )
 
 const (
@@ -391,11 +389,14 @@ func WithEtherTypes(ets []uint16) EtherConnOption {
 	}
 }
 
+const (
+	EthernetTypeARP  uint16 = 0x0806
+	EthernetTypeIPv4 uint16 = 0x0800
+	EthernetTypeIPv6 uint16 = 0x86DD
+)
+
 // DefaultEtherTypes is the default list of Ethernet types for RawPacketRelay and EtherConn
-var DefaultEtherTypes = []uint16{
-	uint16(layers.EthernetTypeARP),
-	uint16(layers.EthernetTypeIPv4),
-	uint16(layers.EthernetTypeIPv6)}
+var DefaultEtherTypes = []uint16{EthernetTypeARP, EthernetTypeIPv4, EthernetTypeIPv6}
 
 // NewEtherConn creates a new EtherConn instance, mac is used as part of EtherConn's L2Endpoint;
 // relay is the PacketRelay that EtherConn instance register with;
@@ -489,12 +490,12 @@ func (ec *EtherConn) WriteIPPktToFrom(p []byte, srcmac, dstmac net.HardwareAddr)
 }
 
 func (ec *EtherConn) writeIPPktToFrom(p []byte, srcmac, dstmac net.HardwareAddr) (int, error) {
-	var payloadtype layers.EthernetType
+	var payloadtype uint16
 	switch p[0] >> 4 {
 	case 4:
-		payloadtype = layers.EthernetTypeIPv4
+		payloadtype = EthernetTypeIPv4
 	case 6:
-		payloadtype = layers.EthernetTypeIPv6
+		payloadtype = EthernetTypeIPv6
 	default:
 		return 0, fmt.Errorf("failed to write to EtherConn, invalid IP version, %d", p[0]>>4)
 	}
