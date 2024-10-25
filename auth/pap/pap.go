@@ -4,7 +4,7 @@ package pap
 import (
 	"context"
 	"errors"
-	"github.com/gandalfast/zouppp/lcp"
+	"github.com/gandalfast/zouppp/pppoe/lcp"
 	"github.com/rs/zerolog"
 	"time"
 )

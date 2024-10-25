@@ -8,7 +8,7 @@ package datapath
 import (
 	"context"
 	"fmt"
-	"github.com/gandalfast/zouppp/lcp"
+	"github.com/gandalfast/zouppp/pppoe/lcp"
 	"github.com/rs/zerolog"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"

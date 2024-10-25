@@ -4,7 +4,7 @@ package chap
 import (
 	"context"
 	"crypto/md5"
-	"github.com/gandalfast/zouppp/lcp"
+	"github.com/gandalfast/zouppp/pppoe/lcp"
 	"github.com/rs/zerolog"
 	"time"
 )
