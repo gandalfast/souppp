@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gandalfast/zouppp/ppp"
 	"log"
 	"net"
 	"net/http"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/gandalfast/zouppp/etherconn"
 	"github.com/gandalfast/zouppp/pppoe"
-	"github.com/gandalfast/zouppp/pppoe/lcp"
 )
 
 const (
@@ -36,7 +36,6 @@ const (
 )
 
 func execCMD(cmdstr string) error {
-	// fmt.Printf("executing cmd %v\n", cmdstr)
 	clist := strings.Fields(cmdstr)
 	cmd := exec.Command(clist[0], clist[1:]...)
 	return cmd.Run()
@@ -174,7 +173,7 @@ func TestPPPoE(t *testing.T) {
 				setup: &Setup{
 					logger:    rootlog,
 					Timeout:   10 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      false,
 					Apply:     true,
@@ -190,7 +189,6 @@ func TestPPPoE(t *testing.T) {
 			+chap
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -198,7 +196,7 @@ func TestPPPoE(t *testing.T) {
 				setup: &Setup{
 					logger:    rootlog,
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -215,7 +213,6 @@ func TestPPPoE(t *testing.T) {
 			+ipv6
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -224,7 +221,7 @@ func TestPPPoE(t *testing.T) {
 					logger:     rootlog,
 					LogLevel:   LogLvlDebug,
 					Timeout:    3 * time.Second,
-					AuthProto:  lcp.ProtoPAP,
+					AuthProto:  ppp.ProtoPAP,
 					IPv4:       false,
 					IPv6:       true,
 					DHCPv6IANA: true,
@@ -299,7 +296,6 @@ func TestPPPoE(t *testing.T) {
 			+ipv6
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -308,7 +304,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      false,
 					IPv6:      true,
 				},
@@ -324,7 +320,6 @@ func TestPPPoE(t *testing.T) {
 			+ipv6
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -333,7 +328,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:    3 * time.Second,
-					AuthProto:  lcp.ProtoCHAP,
+					AuthProto:  ppp.ProtoCHAP,
 					IPv4:       true,
 					IPv6:       true,
 					DHCPv6IAPD: true,
@@ -452,7 +447,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      true,
 				},
@@ -467,7 +462,6 @@ func TestPPPoE(t *testing.T) {
 			-chap
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  "wrong",
@@ -476,7 +470,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -492,7 +486,6 @@ func TestPPPoE(t *testing.T) {
 			+chap
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  "wrong",
@@ -501,7 +494,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -513,7 +506,6 @@ func TestPPPoE(t *testing.T) {
 			desc:      "no pppoesvr, should fail",
 			svrConfig: dontRunTestSvr,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -522,7 +514,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -537,7 +529,6 @@ func TestPPPoE(t *testing.T) {
 			noauth
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -546,7 +537,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -562,7 +553,6 @@ func TestPPPoE(t *testing.T) {
 			require-chap
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -571,7 +561,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoPAP,
+					AuthProto: ppp.ProtoPAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -587,7 +577,6 @@ func TestPPPoE(t *testing.T) {
 			require-pap
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -596,7 +585,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      true,
 					IPv6:      false,
 				},
@@ -613,7 +602,6 @@ func TestPPPoE(t *testing.T) {
 			-ipv6
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -622,7 +610,7 @@ func TestPPPoE(t *testing.T) {
 					logger: rootlog,
 
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      true,
 					IPv6:      true,
 				},
@@ -640,7 +628,6 @@ func TestPPPoE(t *testing.T) {
 			noip
 			`,
 			zouconfig: &Config{
-				//Mac:       net.HardwareAddr{0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33},
 				Mac:       net.HardwareAddr{0xfa, 0x26, 0x67, 0x79, 0x18, 0x82},
 				UserName:  uName,
 				Password:  uPass,
@@ -648,7 +635,7 @@ func TestPPPoE(t *testing.T) {
 				setup: &Setup{
 					logger:    rootlog,
 					Timeout:   3 * time.Second,
-					AuthProto: lcp.ProtoCHAP,
+					AuthProto: ppp.ProtoCHAP,
 					IPv4:      true,
 					IPv6:      true,
 				},
@@ -692,7 +679,6 @@ func TestPPPoE(t *testing.T) {
 		econn := etherconn.NewEtherConn(c.zouconfig.Mac, relay,
 			etherconn.WithEtherTypes([]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession}),
 			etherconn.WithRecvMulticast(true))
-		// err = execCMD("ip netns exec S ip link set S xdp object xdpethfilter_kern.o section xdp_pass_sec")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -718,8 +704,6 @@ func TestPPPoE(t *testing.T) {
 		dialwg.Wait()
 		summary := <-summaryCh
 		close(c.zouconfig.setup.stopResultCh)
-		// ch := make(chan int)
-		// <-ch
 		if summary.Success != 1 {
 			return fmt.Errorf("failed")
 		}
@@ -743,15 +727,6 @@ func TestPPPoE(t *testing.T) {
 		return nil
 	}
 	for i, c := range caseList {
-		// if i != len(caseList)-1 {
-		// 	continue
-		// }
-		// if c.desc != "no pppoesvr, should fail" {
-		// 	continue
-		// }
-		// if i != 5 {
-		// 	continue
-		// }
 		c.zouconfig.setup.LogLevel = LogLvlDebug
 		time.Sleep(3 * time.Second)
 		t.Logf("-----> start case %d using rawrelay: %v", i, c.desc)
@@ -767,23 +742,9 @@ func TestPPPoE(t *testing.T) {
 				t.Fatalf("case %d: %v should failed but succeed", i, c.desc)
 			}
 		}
-		//using xdp
-		// t.Logf("-----> start case %d using xdprelay: %v", i, c.desc)
-		// err = testFunc(c, t, true)
-		// if err != nil {
-		// 	if c.shouldFail {
-		// 		t.Logf("case %d: %v, failed as expected", i, c.desc)
-		// 	} else {
-		// 		t.Fatalf("case %d: %v failed, %v", i, c.desc, err)
-		// 	}
-		// } else {
-		// 	if c.shouldFail {
-		// 		t.Fatalf("case %d: %v should failed but succeed", i, c.desc)
-		// 	}
-		// }
 	}
-
 }
+
 func TestMain(m *testing.M) {
 	runtime.SetBlockProfileRate(1000000000)
 	go func() {

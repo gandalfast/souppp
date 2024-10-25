@@ -4,7 +4,7 @@ package pap
 import (
 	"context"
 	"errors"
-	"github.com/gandalfast/zouppp/pppoe/lcp"
+	"github.com/gandalfast/zouppp/ppp"
 	"github.com/rs/zerolog"
 	"time"
 )
@@ -24,10 +24,10 @@ type PAP struct {
 
 // NewPAP creates a new PAP instance with uname, Password;
 // uses pppProtol as the underlying PPP protocol;
-func NewPAP(pppProto *lcp.PPP) *PAP {
+func NewPAP(pppProto *ppp.PPP) *PAP {
 	r := new(PAP)
-	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoPAP)
-	logger := pppProto.GetLogger().With().Str("Name", "PAP").Logger()
+	r.sendChan, r.recvChan = pppProto.Register(ppp.ProtoPAP)
+	logger := pppProto.Logger.With().Str("Name", "PAP").Logger()
 	r.logger = &logger
 	return r
 }
@@ -39,7 +39,7 @@ func (pap *PAP) getResponse(ctx context.Context, req Packet) (resp Packet, err e
 		req.ID = pap.requestID
 
 		// Send request
-		pppData, err := lcp.NewPPPPkt(&req, lcp.ProtoPAP).Serialize()
+		pppData, err := ppp.NewPacket(&req, ppp.ProtoPAP).Serialize()
 		if err != nil {
 			return resp, err
 		}

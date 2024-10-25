@@ -4,7 +4,7 @@ package chap
 import (
 	"context"
 	"crypto/md5"
-	"github.com/gandalfast/zouppp/pppoe/lcp"
+	"github.com/gandalfast/zouppp/ppp"
 	"github.com/rs/zerolog"
 	"time"
 )
@@ -19,19 +19,19 @@ type CHAP struct {
 }
 
 // NewCHAP creates a new CHAP instance with specified uname,passwd; using pppProto as underlying PPP protocol
-func NewCHAP(pppProto *lcp.PPP) *CHAP {
+func NewCHAP(pppProto *ppp.PPP) *CHAP {
 	r := new(CHAP)
-	r.sendChan, r.recvChan = pppProto.Register(lcp.ProtoCHAP)
-	logger := pppProto.GetLogger().With().Str("Name", "CHAP").Logger()
+	r.sendChan, r.recvChan = pppProto.Register(ppp.ProtoCHAP)
+	logger := pppProto.Logger.With().Str("Name", "CHAP").Logger()
 	r.logger = &logger
 	return r
 }
 
-func (chap *CHAP) send(ctx context.Context, data lcp.Serializer) error {
+func (chap *CHAP) send(ctx context.Context, data ppp.Serializer) error {
 	ctx, cancel := context.WithTimeout(ctx, _defaultTimeout)
 	defer cancel()
 
-	serializedData, err := lcp.NewPPPPkt(data, lcp.ProtoCHAP).Serialize()
+	serializedData, err := ppp.NewPacket(data, ppp.ProtoCHAP).Serialize()
 	if err != nil {
 		return err
 	}
