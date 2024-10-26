@@ -1,8 +1,8 @@
-// test_encap
 package lcp
 
 import (
 	"encoding/hex"
+	"github.com/gandalfast/zouppp/ppp"
 	"testing"
 )
 
@@ -11,29 +11,31 @@ func TestLCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := new(Pkt)
-	err = l.Parse(lcppkt)
-	if err != nil {
+
+	var l Packet
+	if err := l.Parse(lcppkt); err != nil {
 		t.Fatal(err)
 	}
+
 	if l.Code != CodeConfigureRequest {
 		t.Fatal("wrong lcp code")
 	}
-	if *(l.GetOption(OpTypeMaximumReceiveUnit)[0].(*LCPOpMRU)) != LCPOpMRU(1492) {
+	if *(l.GetOption(OpTypeMaximumReceiveUnit)[0].(*OpMRU)) != OpMRU(1492) {
 		t.Fatal("wrong MRU")
 	}
-	if l.GetOption(OpTypeAuthenticationProtocol)[0].(*LCPOpAuthProto).Proto != ProtoPAP {
+	if l.GetOption(OpTypeAuthenticationProtocol)[0].(*OpAuthProto).Proto != ppp.ProtoPAP {
 		t.Fatal("wrong auth proto")
 	}
-	if *(l.GetOption(OpTypeMagicNumber)[0].(*LCPOpMagicNum)) != 0x42ae3317 {
+	if *(l.GetOption(OpTypeMagicNumber)[0].(*OpMagicNum)) != 0x42ae3317 {
 		t.Fatal("wrong magic number")
 	}
+
 	lencoded, err := l.Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = l.Parse(lencoded)
-	if err != nil {
+
+	if err := l.Parse(lencoded); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("\n%v", l)
