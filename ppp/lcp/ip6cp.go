@@ -113,13 +113,13 @@ func genLCPInterfaceIDOptionByRFC7217(mac net.HardwareAddr) func() *InterfaceIDO
 }
 
 // GetOptions implements OwnOptionRule interface, return own interface id
-func (r *DefaultIP6CPRule) GetOptions() Options {
+func (r *DefaultIP6CPRule) GetOptions() []Option {
 	if r.IfID.Load() == 0 {
-		return Options{}
+		return nil
 	}
 	opt := &InterfaceIDOption{}
 	opt.parseUint64(r.IfID.Load())
-	return Options{opt}
+	return []Option{opt}
 }
 
 // GetOption implements OwnOptionRule interface, return nil if t is not interface-id
@@ -134,23 +134,29 @@ func (r *DefaultIP6CPRule) GetOption(t uint8) Option {
 }
 
 // HandlerConfRej implements OwnOptionRule interface, if interface-id is rejected, then setting own interface-id to nil
-func (r *DefaultIP6CPRule) HandlerConfRej(rcvd Options) {
-	if len(rcvd.Get(uint8(IP6CPOpInterfaceIdentifier))) > 0 {
-		r.IfID.Store(0)
+func (r *DefaultIP6CPRule) HandlerConfRej(received []Option) {
+	for _, opt := range received {
+		if opt.Type() == uint8(IP6CPOpInterfaceIdentifier) {
+			r.IfID.Store(0)
+			break
+		}
 	}
 }
 
 // HandlerConfNAK implements OwnOptionRule interface, generate a new interface-id if interface-id is NAK-ed.
-func (r *DefaultIP6CPRule) HandlerConfNAK(rcvd Options) {
-	if len(rcvd.Get(uint8(IP6CPOpInterfaceIdentifier))) > 0 {
-		r.IfID.Store(r.ifIDGenerator().toUint64())
+func (r *DefaultIP6CPRule) HandlerConfNAK(received []Option) {
+	for _, opt := range received {
+		if opt.Type() == uint8(IP6CPOpInterfaceIdentifier) {
+			r.IfID.Store(r.ifIDGenerator().toUint64())
+			break
+		}
 	}
 }
 
 // HandlerConfReq implements PeerOptionRule interface,
 // section 4.1 of RFC5072 in terms of NAK or REJECT peer's interface-id.
-func (r *DefaultIP6CPRule) HandlerConfReq(rcvd Options) (nak, reject Options) {
-	for _, o := range rcvd {
+func (r *DefaultIP6CPRule) HandlerConfReq(received []Option) (nak, reject []Option) {
+	for _, o := range received {
 		if o.Type() == uint8(IP6CPOpInterfaceIdentifier) {
 			interfaceOpt, ok := o.(*InterfaceIDOption)
 			if !ok {

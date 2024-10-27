@@ -1,12 +1,12 @@
-// Package lcp implements PPP, LCP, IPCP and IPv6CP
+// Package lcp implements LCP, IPCP and IPv6CP protocols
 package lcp
 
 import (
 	"context"
 	"fmt"
+	"github.com/gandalfast/zouppp/ppp"
 	"github.com/rs/zerolog"
 	"math/rand"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,121 +15,43 @@ import (
 // LayerNotifyHandler is the handler function to handle Layer event (tlu/tld/tls/tlf as defined in RFC1661)
 type LayerNotifyHandler func(ctx context.Context, evt LayerNotifyEvent)
 
-// LCP is the struct for LCP/IPCP/IPv6CP
-type LCP struct {
-	protoType             PPPProtocolNumber //since lcp could be also used by IPCP
-	state                 *uint32
-	restartCount          *uint32
-	maxRestart            uint32
-	restartTimerDuration  time.Duration
-	restartTimer          *time.Timer
-	keepAliveTimer        *time.Timer
-	keepAliveInterval     time.Duration
-	cancellRestartTimer   context.CancelFunc
-	cancellkeepAliveTimer context.CancelFunc
-	sendChan              chan []byte
-	recvChan              chan []byte
-	requestIDChan         chan uint8
-	requestID             uint8
-	reqiestIDLock         *sync.RWMutex
-	logger                *zerolog.Logger
-	// OwnRule is the OwnOptionRule to handle own options
-	OwnRule OwnOptionRule
-	// PeerRule is the PeerOptionRule to handle peer's options
-	PeerRule    PeerOptionRule
-	layerNotify LayerNotifyHandler
-}
-
-const (
-	// DefaultRestartCounter is the default LCP restart counter value
-	DefaultRestartCounter = 3
-	// DefaultRestartTimerDuration is the default restart timer
-	DefaultRestartTimerDuration = 10 * time.Second
-	// DefaultKeepAliveInterval is the default LCP keepalive interval to send
-	DefaultKeepAliveInterval = 5 * time.Second
-	// DefaultMRU is the default LCP MRU value
-	DefaultMRU = 1500
-	// DefaultAuthProto is the default auth protocol
-	DefaultAuthProto = ProtoCHAP
-	// DefaultMagicNum is the default LCP magic number
-	DefaultMagicNum LCPOpMagicNum = 0
-)
-
-func newOwnDefaultOptions() Options {
-	defaultMRUOp := LCPOpMRU(DefaultMRU)
-	magicNum := LCPOpMagicNum(rand.Uint32())
-
-	return Options{
-		&defaultMRUOp,
-		&magicNum,
-	}
-}
-
-// NewLCP creates a new LCP/IPCP/IPv6CP according to the specific proto, runs over specified pppProto, calls h whenever there is layer event.
-// optionly, LCPModifier(s) could be specified to change default config
-func NewLCP(ctx context.Context, proto PPPProtocolNumber, pppProto *PPP, h LayerNotifyHandler, mods ...Modifier) *LCP {
-	lcp := new(LCP)
-	lcp.protoType = proto
-	lcp.state = new(uint32)
-	atomic.StoreUint32(lcp.state, uint32(StateInitial))
-	lcp.maxRestart = DefaultRestartCounter
-	lcp.restartCount = new(uint32)
-	atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-	lcp.OwnRule = NewDefaultOwnOptionRule()
-	lcp.restartTimerDuration = DefaultRestartTimerDuration
-	lcp.keepAliveInterval = DefaultKeepAliveInterval
-	lcp.PeerRule, _ = NewDefaultPeerOptionRule(DefaultAuthProto)
-	lcp.requestIDChan = make(chan uint8)
-	lcp.reqiestIDLock = new(sync.RWMutex)
-	logger := pppProto.GetLogger().With().Str("LCPProto", lcp.protoType.String()).Logger()
-	lcp.logger = &logger
-	lcp.sendChan, lcp.recvChan = pppProto.Register(lcp.protoType)
-	lcp.layerNotify = h
-	for _, mod := range mods {
-		mod(lcp)
-	}
-
-	go lcp.issueRequestID(ctx)
-	go lcp.recv(ctx)
-	return lcp
-}
-
 // OwnOptionRule is rule that used to handle own LCP options, user could provide implementation of this interface to get custom behavior
 type OwnOptionRule interface {
 	// HandlerConfRej is the handler function to handle received Conf-Reject
-	HandlerConfRej(rcvd Options)
+	HandlerConfRej(received []Option)
 	// HandlerConfNAK is the handler function to handle received Conf-Nak
-	HandlerConfNAK(rcvd Options)
+	HandlerConfNAK(received []Option)
 	// GetOptions returns current own options
-	GetOptions() Options
+	GetOptions() []Option
 	// GetOption returns current option with type o
-	GetOption(o uint8) Option
+	GetOption(o byte) Option
 }
 
-// DefaultOwnOptionRule is the default OwnOptionRule implementation;
-// use NewDefaultOwnOptionRule() to create instance;
-// using following options: MRU, AuthProto, MagicNumber with default value;
+// DefaultOwnOptionRule is the default OwnOptionRule implementation
 type DefaultOwnOptionRule struct {
-	ownOptions Options
-	mux        *sync.RWMutex
+	ownOptions []Option
+	mux        sync.RWMutex
 }
 
 // NewDefaultOwnOptionRule returns a new DefaultOwnOptionRule
 func NewDefaultOwnOptionRule() *DefaultOwnOptionRule {
+	defaultMRUOp := OpMRU(ppp.MaxPPPMsgSize)
+	magicNum := OpMagicNum(rand.Uint32())
+
 	return &DefaultOwnOptionRule{
-		mux:        new(sync.RWMutex),
-		ownOptions: newOwnDefaultOptions(),
+		ownOptions: []Option{
+			&defaultMRUOp,
+			&magicNum,
+		},
 	}
 }
 
-// GetOptions implements OwnOptionRule
-func (own *DefaultOwnOptionRule) GetOptions() Options {
+func (own *DefaultOwnOptionRule) GetOptions() []Option {
 	own.mux.RLock()
 	defer own.mux.RUnlock()
 	return own.ownOptions
 }
 
-// GetOption implements OwnOptionRule
 func (own *DefaultOwnOptionRule) GetOption(o uint8) Option {
 	own.mux.RLock()
 	defer own.mux.RUnlock()
@@ -141,65 +63,84 @@ func (own *DefaultOwnOptionRule) GetOption(o uint8) Option {
 	return nil
 }
 
-// HandlerConfRej implements OwnOptionRule, remove all options listed in conf-rej
-func (own *DefaultOwnOptionRule) HandlerConfRej(rcvd Options) {
+// HandlerConfRej removes all options listed in conf-rej
+func (own *DefaultOwnOptionRule) HandlerConfRej(received []Option) {
+	toReject := make(map[uint8]struct{}, len(received))
+	for _, opt := range received {
+		toReject[opt.Type()] = struct{}{}
+	}
+
 	own.mux.Lock()
 	defer own.mux.Unlock()
-	for _, op := range rcvd {
-		own.ownOptions.Del(op.Type())
+
+	options := make([]Option, 0, len(own.ownOptions))
+	for _, opt := range own.ownOptions {
+		if _, isReject := toReject[opt.Type()]; !isReject {
+			options = append(options, opt)
+		}
 	}
+	own.ownOptions = options
 }
 
-// HandlerConfNAK implements OwnOptionRule, accept all options listed in conf-nak
-func (own *DefaultOwnOptionRule) HandlerConfNAK(rcvd Options) {
+// HandlerConfNAK accepts all options listed in conf-nak
+func (own *DefaultOwnOptionRule) HandlerConfNAK(received []Option) {
+	toReplace := make(map[uint8]Option, len(received))
+	for _, opt := range received {
+		toReplace[opt.Type()] = opt
+	}
+
 	own.mux.Lock()
 	defer own.mux.Unlock()
-	own.ownOptions.Replace(rcvd)
+
+	for i, opt := range own.ownOptions {
+		if newOpt, isReplace := toReplace[opt.Type()]; isReplace {
+			own.ownOptions[i] = newOpt
+		}
+	}
 }
 
 // PeerOptionRule is rule that use for handle received config-req from peer
 type PeerOptionRule interface {
 	// HandlerConfReq is the handler function to handle received Conf-Request.
-	// if a recived option needs to be naked or rejected, include it in returned nak/reject LCPOptions
-	HandlerConfReq(rcvd Options) (nak, reject Options)
+	// if a received option needs to be naked or rejected, include it in returned nak/reject LCPOptions
+	HandlerConfReq(received []Option) (nak, reject []Option)
 	// GetOptions return current peer's options
-	GetOptions() Options
+	GetOptions() []Option
 }
 
 // DefaultPeerOptionRule is the default PeerOptionRule implementation.
 type DefaultPeerOptionRule struct {
 	// AuthOp is the required Auth Protocol Option (PAP or CHAP)
-	AuthOp         *LCPOpAuthProto
-	currentOptions Options
+	AuthOp         *OpAuthProto
+	currentOptions []Option
 }
 
-// NewDefaultPeerOptionRule create a new DefaultPeerOptionRule instance with specified authp (
-func NewDefaultPeerOptionRule(authp PPPProtocolNumber) (*DefaultPeerOptionRule, error) {
-	var op *LCPOpAuthProto
-	switch authp {
-	case ProtoCHAP:
-		op = NewCHAPAuthOp()
-	case ProtoPAP:
-		op = NewPAPAuthOp()
+// NewDefaultPeerOptionRule create a new DefaultPeerOptionRule instance with specified auth protocol
+func NewDefaultPeerOptionRule(authProto ppp.ProtocolNumber) (*DefaultPeerOptionRule, error) {
+	switch authProto {
+	case ppp.ProtoCHAP:
+		return &DefaultPeerOptionRule{
+			AuthOp: NewCHAPAuthOp(),
+		}, nil
+	case ppp.ProtoPAP:
+		return &DefaultPeerOptionRule{
+			AuthOp: NewPAPAuthOp(),
+		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported auth protocol: %v", authp)
+		return nil, fmt.Errorf("unsupported auth protocol: %v", authProto)
 	}
-	r := new(DefaultPeerOptionRule)
-	r.AuthOp = op
-	return r, nil
 }
 
-// GetOptions implements PeerOptionRule.
-func (rule *DefaultPeerOptionRule) GetOptions() Options {
+func (rule *DefaultPeerOptionRule) GetOptions() []Option {
 	return rule.currentOptions
 }
 
 // HandlerConfReq implements PeerOptionRule, if config-request include an auth-proto option that is different from required one, it will be NAKed;
 // Option in conf-req other than auth-proto, magic number and MRU will be rejected.
-func (rule *DefaultPeerOptionRule) HandlerConfReq(rcvd Options) (nak, reject Options) {
-	rule.currentOptions = rcvd
-	for _, o := range rcvd {
-		switch LCPOptionType(o.Type()) {
+func (rule *DefaultPeerOptionRule) HandlerConfReq(received []Option) (nak, reject []Option) {
+	rule.currentOptions = received
+	for _, o := range received {
+		switch OptionType(o.Type()) {
 		case OpTypeAuthenticationProtocol:
 			if !o.Equal(rule.AuthOp) {
 				nak = append(nak, rule.AuthOp)
@@ -209,55 +150,80 @@ func (rule *DefaultPeerOptionRule) HandlerConfReq(rcvd Options) (nak, reject Opt
 			reject = append(reject, o)
 		}
 	}
-	return
+	return nak, reject
 }
 
-func getCallerName() (fname, callername string, linenum int) {
-	fpcs := make([]uintptr, 1)
-	// Skip 2 levels to get the caller
-	n := runtime.Callers(3, fpcs)
-	if n == 0 {
-		return
-	}
+// LCP is the implementation for LCP/IPCP/IPv6CP
+type LCP struct {
+	logger      *zerolog.Logger
+	protoType   ppp.ProtocolNumber
+	OwnRule     OwnOptionRule  // Handle own options
+	PeerRule    PeerOptionRule // Handle peer's options
+	layerNotify LayerNotifyHandler
 
-	caller := runtime.FuncForPC(fpcs[0] - 1)
-	if caller == nil {
-		return
-	}
-	fname, linenum = caller.FileLine(fpcs[0] - 1)
-	callername = caller.Name()
-	return
-
+	requestID             atomic.Uint32
+	state                 *uint32
+	restartCount          *uint32
+	maxRestart            uint32
+	restartTimerDuration  time.Duration
+	restartTimer          *time.Timer
+	keepAliveTimer        *time.Timer
+	keepAliveInterval     time.Duration
+	cancellRestartTimer   context.CancelFunc
+	cancellkeepAliveTimer context.CancelFunc
+	sendChan              chan []byte
+	recvChan              chan []byte
 }
 
-func (lcp *LCP) setState(s State) {
+const (
+	// _defaultRestartCounter is the default LCP restart counter value
+	_defaultRestartCounter = 3
+	// _defaultRestartTimerDuration is the default restart timer duration
+	_defaultRestartTimerDuration = 10 * time.Second
+	// _defaultKeepAliveInterval is the default LCP keepalive interval
+	_defaultKeepAliveInterval = 5 * time.Second
+)
+
+// NewLCP creates a new LCP/IPCP/IPv6CP according to the specific proto, runs over specified pppProto, calls h whenever there is layer event.
+// optionly, LCPModifier(s) could be specified to change default config
+func NewLCP(proto ppp.ProtocolNumber, pppProto *ppp.PPP, h LayerNotifyHandler, peerRule PeerOptionRule, optionRule OwnOptionRule) *LCP {
+	lcp := new(LCP)
+	logger := pppProto.Logger.With().Str("LCPProto", lcp.protoType.String()).Logger()
+	lcp.logger = &logger
+	lcp.protoType = proto
+	lcp.OwnRule = optionRule
+	lcp.PeerRule = peerRule
+	lcp.layerNotify = h
+
+	lcp.state = new(uint32)
+	atomic.StoreUint32(lcp.state, uint32(StateInitial))
+	lcp.maxRestart = _defaultRestartCounter
+	lcp.restartCount = new(uint32)
+	atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
+
+	lcp.restartTimerDuration = _defaultRestartTimerDuration
+	lcp.keepAliveInterval = _defaultKeepAliveInterval
+
+	lcp.sendChan, lcp.recvChan = pppProto.Register(lcp.protoType)
+	return lcp
+}
+
+func (lcp *LCP) Start(ctx context.Context) {
+	go lcp.recv(ctx)
+}
+
+func (lcp *LCP) setState(s State, caller string) {
 	old := State(atomic.LoadUint32(lcp.state))
 	atomic.StoreUint32(lcp.state, uint32(s))
-	_, callername, linenum := getCallerName()
-
-	lcp.logger.Debug().Msgf("%v:%v state transit %v -> %v", callername, linenum, old, s)
+	lcp.logger.Debug().Msgf("%v state transit %v -> %v", caller, old, s)
 }
 
 func (lcp *LCP) getState() State {
 	return State(atomic.LoadUint32(lcp.state))
 }
 
-func (lcp *LCP) issueRequestID(ctx context.Context) {
-	for {
-		select {
-		case lcp.requestIDChan <- lcp.requestID:
-			lcp.reqiestIDLock.Lock()
-			lcp.requestID++
-			lcp.reqiestIDLock.Unlock()
-		case <-ctx.Done():
-			lcp.logger.Info().Msg("issueRequestID routine stopped")
-			return
-		}
-	}
-}
-
 func (lcp *LCP) send(p []byte) error {
-	ppkt, err := NewPPPPkt(NewStaticSerializer(p), lcp.protoType).Serialize()
+	ppkt, err := ppp.NewPacket(ppp.NewStaticSerializer(p), lcp.protoType).Serialize()
 	if err != nil {
 		return err
 	}
@@ -266,9 +232,9 @@ func (lcp *LCP) send(p []byte) error {
 }
 
 func (lcp *LCP) sendConfReq(ctx context.Context) error {
-	lcppkt := NewPkt(lcp.protoType)
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeConfigureRequest
-	lcppkt.ID = <-lcp.requestIDChan
+	lcppkt.ID = uint8(lcp.requestID.Add(1) - 1)
 	lcppkt.Options = lcp.OwnRule.GetOptions()
 	lcpbytes, err := lcppkt.Serialize()
 	if err != nil {
@@ -280,9 +246,9 @@ func (lcp *LCP) sendConfReq(ctx context.Context) error {
 }
 
 func (lcp *LCP) sendTermReq(ctx context.Context) error {
-	lcppkt := NewPkt(lcp.protoType)
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeTerminateRequest
-	lcppkt.ID = <-lcp.requestIDChan
+	lcppkt.ID = uint8(lcp.requestID.Add(1) - 1)
 	lcpbytes, err := lcppkt.Serialize()
 	if err != nil {
 		return err
@@ -292,8 +258,8 @@ func (lcp *LCP) sendTermReq(ctx context.Context) error {
 	return lcp.send(lcpbytes)
 }
 
-func (lcp *LCP) sendTermACK(req *Pkt) error {
-	lcppkt := NewPkt(lcp.protoType)
+func (lcp *LCP) sendTermACK(req *Packet) error {
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeTerminateAck
 	lcppkt.ID = req.ID
 	lcpbytes, err := lcppkt.Serialize()
@@ -303,10 +269,11 @@ func (lcp *LCP) sendTermACK(req *Pkt) error {
 	lcp.logger.Info().Str("pkt", lcppkt.String()).Msg("sending term-ack")
 	return lcp.send(lcpbytes)
 }
-func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
+
+func (lcp *LCP) sendNAKRejct(req *Packet, nak, reject []Option) (err error) {
 	var lcpbytes []byte
 	if len(nak) > 0 {
-		lcppkt := NewPkt(lcp.protoType)
+		lcppkt := NewPacket(lcp.protoType)
 		lcppkt.Code = CodeConfigureNak
 		lcppkt.ID = req.ID
 		lcppkt.Options = nak
@@ -322,7 +289,7 @@ func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
 	}
 
 	if len(reject) > 0 {
-		lcppkt := NewPkt(lcp.protoType)
+		lcppkt := NewPacket(lcp.protoType)
 		lcppkt.Code = CodeConfigureReject
 		lcppkt.ID = req.ID
 		lcppkt.Options = reject
@@ -340,8 +307,8 @@ func (lcp *LCP) sendNAKRejct(req *Pkt, nak, reject Options) (err error) {
 	return
 }
 
-func (lcp *LCP) sendConfACK(req *Pkt) error {
-	lcppkt := NewPkt(lcp.protoType)
+func (lcp *LCP) sendConfACK(req *Packet) error {
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeConfigureAck
 	lcppkt.ID = req.ID
 	lcppkt.Options = req.Options
@@ -355,7 +322,7 @@ func (lcp *LCP) sendConfACK(req *Pkt) error {
 
 func (lcp *LCP) resetKeepAliveTimer(ctx context.Context) {
 	lcp.logger.Debug().Msg("reset keepalive timer")
-	if lcp.protoType != ProtoLCP {
+	if lcp.protoType != ppp.ProtoLCP {
 		return
 	}
 	if lcp.keepAliveTimer == nil {
@@ -405,7 +372,7 @@ func (lcp *LCP) keepAliveTimeout(ctx context.Context) {
 			lcp.logger.Error().Err(err).Msg("keepAliveTimeout")
 			return
 		}
-		lcp.setState(StateEchoReqSent)
+		lcp.setState(StateEchoReqSent, "keepAliveTimeout")
 	}
 }
 
@@ -436,7 +403,7 @@ func (lcp *LCP) toPlus(ctx context.Context) {
 		//send conf req, this is actually send current version of config options
 		err = lcp.sendConfReq(ctx)
 		if err == nil {
-			lcp.setState(StateReqSent)
+			lcp.setState(StateReqSent, "toPlus")
 		}
 	case StateEchoReqSent:
 		//send echo request
@@ -450,27 +417,26 @@ func (lcp *LCP) toPlus(ctx context.Context) {
 // toMinus is TO- event
 func (lcp *LCP) toMinus(ctx context.Context) {
 	lcp.logger.Debug().Msg("timer expired, TO- event")
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateClosing:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateClosed)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateClosed, "toMinus "+state.String())
 	case StateStopping:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateStopped)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateStopped, "toMinus "+state.String())
 	case StateReqSent, StateAckSent, StateAckRcvd, StateEchoReqSent:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateStopped)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateStopped, "toMinus "+state.String())
 	}
 }
-
-const readTimeout = 3 * time.Second
 
 func (lcp *LCP) processRecvByte(ctx context.Context, pktbytes []byte) {
 	if len(pktbytes) < 4 {
 		lcp.logger.Warn().Msg("recvd LCP pkt too small")
 		return
 	}
-	pkt := NewPkt(lcp.protoType)
+	pkt := NewPacket(lcp.protoType)
 	err := pkt.Parse(pktbytes)
 	if err != nil {
 		lcp.logger.Warn().Err(err).Msg("invalid LCP pkt")
@@ -538,8 +504,9 @@ func (lcp *LCP) recv(ctx context.Context) {
 	}
 }
 
-func (lcp *LCP) rcrPlus(ctx context.Context, req *Pkt) (err error) {
-	switch lcp.getState() {
+func (lcp *LCP) rcrPlus(ctx context.Context, req *Packet) (err error) {
+	state := lcp.getState()
+	switch state {
 	case StateClosed:
 		//send term-ack
 		err = lcp.sendTermACK(req)
@@ -555,28 +522,28 @@ func (lcp *LCP) rcrPlus(ctx context.Context, req *Pkt) (err error) {
 			return
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-		lcp.setState(StateAckSent)
+		lcp.setState(StateAckSent, "rcrPlus "+state.String())
 	case StateReqSent:
 		// send conf-ack
 		err = lcp.sendConfACK(req)
 		if err != nil {
 			return
 		}
-		lcp.setState(StateAckSent)
+		lcp.setState(StateAckSent, "rcrPlus "+state.String())
 	case StateAckRcvd:
 		//send conf-ack
 		err = lcp.sendConfACK(req)
 		if err != nil {
 			return
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyUp)
-		lcp.setState(StateOpened)
+		lcp.layerNotify(ctx, LayerNotifyUp)
+		lcp.setState(StateOpened, "rcrPlus "+state.String())
 		lcp.resetKeepAliveTimer(ctx)
 	case StateAckSent:
 		// send conf-ack
 		err = lcp.sendConfACK(req)
 	case StateOpened, StateEchoReqSent:
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
+		lcp.layerNotify(ctx, LayerNotifyDown)
 		// send conf-req
 		err = lcp.sendConfReq(ctx)
 		if err != nil {
@@ -587,14 +554,14 @@ func (lcp *LCP) rcrPlus(ctx context.Context, req *Pkt) (err error) {
 		if err != nil {
 			return
 		}
-		lcp.setState(StateAckSent)
-
+		lcp.setState(StateAckSent, "rcrPlus "+state.String())
 	}
 	return
 }
 
-func (lcp *LCP) rcrMinus(ctx context.Context, req *Pkt, nak, reject Options) (err error) {
-	switch lcp.getState() {
+func (lcp *LCP) rcrMinus(ctx context.Context, req *Packet, nak, reject []Option) (err error) {
+	state := lcp.getState()
+	switch state {
 	case StateClosed:
 		//send term-ack
 		err = lcp.sendTermACK(req)
@@ -610,7 +577,7 @@ func (lcp *LCP) rcrMinus(ctx context.Context, req *Pkt, nak, reject Options) (er
 			return
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rcrMinus "+state.String())
 	case StateReqSent, StateAckRcvd:
 		// send conf-nak
 		err = lcp.sendNAKRejct(req, nak, reject)
@@ -620,7 +587,7 @@ func (lcp *LCP) rcrMinus(ctx context.Context, req *Pkt, nak, reject Options) (er
 		if err != nil {
 			return
 		}
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rcrMinus "+state.String())
 	case StateOpened, StateEchoReqSent:
 		// send conf-req
 		err = lcp.sendConfReq(ctx)
@@ -632,55 +599,56 @@ func (lcp *LCP) rcrMinus(ctx context.Context, req *Pkt, nak, reject Options) (er
 		if err != nil {
 			return
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
-		lcp.setState(StateReqSent)
+		lcp.layerNotify(ctx, LayerNotifyDown)
+		lcp.setState(StateReqSent, "rcrMinus "+state.String())
 	}
 	return
 }
 
 // RCA event
-func (lcp *LCP) rca(ctx context.Context, req *Pkt) (err error) {
-
-	switch lcp.getState() {
+func (lcp *LCP) rca(ctx context.Context, req *Packet) (err error) {
+	state := lcp.getState()
+	switch state {
 	case StateStopped, StateClosed:
 		//send term-ack
 		err = lcp.sendTermACK(req)
 	case StateReqSent:
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-		lcp.setState(StateAckRcvd)
+		lcp.setState(StateAckRcvd, "rca "+state.String())
 	case StateAckRcvd:
 		//send conf req
 		err = lcp.sendConfReq(ctx)
 		if err != nil {
 			return
 		}
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rca "+state.String())
 	case StateAckSent:
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-		lcp.layerNotify(ctx, LCPLayerNotifyUp)
-		lcp.setState(StateOpened)
+		lcp.layerNotify(ctx, LayerNotifyUp)
+		lcp.setState(StateOpened, "rca "+state.String())
 		lcp.resetKeepAliveTimer(ctx)
 	case StateOpened, StateEchoReqSent:
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
+		lcp.layerNotify(ctx, LayerNotifyDown)
 		//send conf req
 		err = lcp.sendConfReq(ctx)
 		if err != nil {
 			return
 		}
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rca "+state.String())
 	}
 	return
 }
 
 // RCN event
-func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
+func (lcp *LCP) rcn(ctx context.Context, req *Packet) error {
 	switch req.Code {
 	case CodeConfigureNak:
 		lcp.OwnRule.HandlerConfNAK(req.Options)
 	case CodeConfigureReject:
 		lcp.OwnRule.HandlerConfRej(req.Options)
 	}
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateStopped, StateClosed:
 		// send term-ack
 		return lcp.sendTermACK(req)
@@ -697,7 +665,7 @@ func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 		if err != nil {
 			return err
 		}
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rcn "+state.String())
 	case StateAckSent:
 		//send cfg-req
 		err := lcp.sendConfReq(ctx)
@@ -711,35 +679,35 @@ func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 		if err != nil {
 			return err
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
-		lcp.setState(StateReqSent)
+		lcp.layerNotify(ctx, LayerNotifyDown)
+		lcp.setState(StateReqSent, "rcn "+state.String())
 	}
 	return nil
 }
 
 // PTR event
-func (lcp *LCP) rtr(ctx context.Context, req *Pkt) (err error) {
-	switch lcp.getState() {
+func (lcp *LCP) rtr(ctx context.Context, req *Packet) (err error) {
+	state := lcp.getState()
+	switch state {
 	case StateClosed, StateStopped, StateClosing, StateStopping:
 		//send term-ack
 		err = lcp.sendTermACK(req)
 	case StateReqSent, StateAckRcvd, StateAckSent:
-
 		err = lcp.sendTermACK(req)
 		if err != nil {
 			return
 		}
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rtr "+state.String())
 	case StateOpened, StateEchoReqSent:
 		// send term-ack
 		err = lcp.sendTermACK(req)
 		if err != nil {
 			return
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
+		lcp.layerNotify(ctx, LayerNotifyDown)
 		atomic.StoreUint32(lcp.restartCount, 0)
 		lcp.resetTimer(ctx)
-		lcp.setState(StateStopping)
+		lcp.setState(StateStopping, "rtr "+state.String())
 	}
 	return
 }
@@ -747,30 +715,30 @@ func (lcp *LCP) rtr(ctx context.Context, req *Pkt) (err error) {
 // RTA event
 func (lcp *LCP) rta(ctx context.Context) error {
 	lcp.logger.Debug().Msg("RTA (receive term-ack) event")
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateClosing:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateClosed)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateClosed, "rta "+state.String())
 	case StateStopping:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateStopped)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateStopped, "rta "+state.String())
 	case StateAckRcvd:
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rta "+state.String())
 	case StateOpened, StateEchoReqSent:
 		//send conf req
 		err := lcp.sendConfReq(ctx)
 		if err != nil {
 			return err
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
-		lcp.setState(StateReqSent)
-
+		lcp.layerNotify(ctx, LayerNotifyDown)
+		lcp.setState(StateReqSent, "rta "+state.String())
 	}
 	return nil
 }
 
 // RUC event
-func (lcp *LCP) ruc(req *Pkt) error {
+func (lcp *LCP) ruc(req *Packet) error {
 	switch lcp.getState() {
 	case StateInitial, StateStarting:
 		return nil
@@ -779,10 +747,10 @@ func (lcp *LCP) ruc(req *Pkt) error {
 	return lcp.sendCodeReject(req)
 }
 
-func (lcp *LCP) sendCodeReject(req *Pkt) error {
-	pkt := NewPkt(lcp.protoType)
+func (lcp *LCP) sendCodeReject(req *Packet) error {
+	pkt := NewPacket(lcp.protoType)
 	pkt.Code = CodeCodeReject
-	pkt.ID = <-lcp.requestIDChan
+	pkt.ID = uint8(lcp.requestID.Add(1) - 1)
 	pkt.Payload, _ = req.Serialize()
 	pktbytes, err := pkt.Serialize()
 	if err != nil {
@@ -796,43 +764,44 @@ func (lcp *LCP) sendCodeReject(req *Pkt) error {
 func (lcp *LCP) rxjPlus() {
 	switch lcp.getState() {
 	case StateAckRcvd:
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "rxjPlus")
 	}
 }
 
 // rxjMnius is RXJ- event
-func (lcp *LCP) rxjMinus(ctx context.Context, req *Pkt) error {
+func (lcp *LCP) rxjMinus(ctx context.Context, req *Packet) error {
 	lcp.logger.Error().Msgf("Got a %v pkt", req.Code)
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateStopped, StateClosed:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
 	case StateClosing:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateClosed)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateClosed, "rxjMinus "+state.String())
 	case StateStopping:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateStopped)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateStopped, "rxjMinus "+state.String())
 	case StateReqSent, StateAckRcvd, StateAckSent:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateStopped)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateStopped, "rxjMinus "+state.String())
 	case StateOpened, StateEchoReqSent:
 		// send term-req
 		err := lcp.sendTermReq(ctx)
 		if err != nil {
 			return err
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
+		lcp.layerNotify(ctx, LayerNotifyDown)
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
 	}
 	return nil
 }
 
 func (lcp *LCP) sendEchoRequest(ctx context.Context) error {
-	lcppkt := NewPkt(lcp.protoType)
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeEchoRequest
-	lcppkt.ID = <-lcp.requestIDChan
+	lcppkt.ID = uint8(lcp.requestID.Add(1) - 1)
 	if mn := lcp.OwnRule.GetOption(uint8(OpTypeMagicNumber)); mn != nil {
-		lcppkt.MagicNum = uint32(*(mn.(*LCPOpMagicNum)))
+		lcppkt.MagicNum = uint32(*(mn.(*OpMagicNum)))
 	}
 	lcpbytes, err := lcppkt.Serialize()
 	if err != nil {
@@ -843,14 +812,13 @@ func (lcp *LCP) sendEchoRequest(ctx context.Context) error {
 	return lcp.send(lcpbytes)
 }
 
-func (lcp *LCP) sendEchoReply(req *Pkt) error {
-	lcppkt := NewPkt(lcp.protoType)
+func (lcp *LCP) sendEchoReply(req *Packet) error {
+	lcppkt := NewPacket(lcp.protoType)
 	lcppkt.Code = CodeEchoReply
 	lcppkt.ID = req.ID
-	//lcppkt.Payload = make([]byte, 4)
-	lcppkt.Options = Options{}
+	lcppkt.Options = []Option{}
 	if mn := lcp.OwnRule.GetOption(uint8(OpTypeMagicNumber)); mn != nil {
-		lcppkt.MagicNum = uint32(*(mn.(*LCPOpMagicNum)))
+		lcppkt.MagicNum = uint32(*(mn.(*OpMagicNum)))
 	}
 	lcpbytes, err := lcppkt.Serialize()
 	if err != nil {
@@ -862,7 +830,7 @@ func (lcp *LCP) sendEchoReply(req *Pkt) error {
 }
 
 // RXR event
-func (lcp *LCP) rxr(ctx context.Context, req *Pkt) error {
+func (lcp *LCP) rxr(ctx context.Context, req *Packet) error {
 	switch req.Code {
 	case CodeEchoRequest:
 		switch lcp.getState() {
@@ -873,7 +841,7 @@ func (lcp *LCP) rxr(ctx context.Context, req *Pkt) error {
 		switch lcp.getState() {
 		case StateEchoReqSent:
 			atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-			lcp.setState(StateOpened)
+			lcp.setState(StateOpened, "rxr")
 			lcp.resetKeepAliveTimer(ctx)
 		}
 	}
@@ -882,9 +850,10 @@ func (lcp *LCP) rxr(ctx context.Context, req *Pkt) error {
 
 // Up is lower layer up event, as defined in RFC1661
 func (lcp *LCP) Up(ctx context.Context) (err error) {
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateInitial:
-		lcp.setState(StateClosed)
+		lcp.setState(StateClosed, "Up "+state.String())
 	case StateStarting:
 		err = lcp.sendConfReq(ctx)
 		if err != nil {
@@ -892,54 +861,57 @@ func (lcp *LCP) Up(ctx context.Context) (err error) {
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
 		lcp.resetTimer(ctx)
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "Up "+state.String())
 	}
 	return
 }
 
 // Down is lower layer down event, as defined in RFC1661
 func (lcp *LCP) Down(ctx context.Context) {
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateStopped:
-		lcp.layerNotify(ctx, LCPLayerNotifyStarted)
-		lcp.setState(StateStarting)
+		lcp.layerNotify(ctx, LayerNotifyStarted)
+		lcp.setState(StateStarting, "Down "+state.String())
 	case StateReqSent, StateAckRcvd, StateAckSent:
-		lcp.setState(StateStarting)
+		lcp.setState(StateStarting, "Down "+state.String())
 	case StateOpened, StateEchoReqSent:
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
-		lcp.setState(StateStarting)
+		lcp.layerNotify(ctx, LayerNotifyDown)
+		lcp.setState(StateStarting, "Down "+state.String())
 	}
 }
 
 // Open is admin Open event, as defined in RFC1661
 func (lcp *LCP) Open(ctx context.Context) error {
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateInitial:
-		lcp.layerNotify(ctx, LCPLayerNotifyStarted)
-		lcp.setState(StateStarting)
+		lcp.layerNotify(ctx, LayerNotifyStarted)
+		lcp.setState(StateStarting, "Open "+state.String())
 	case StateClosed:
 		err := lcp.sendConfReq(ctx)
 		if err != nil {
 			return err
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
-		lcp.setState(StateReqSent)
+		lcp.setState(StateReqSent, "Open "+state.String())
 	case StateClosing:
-		lcp.setState(StateStopping)
+		lcp.setState(StateStopping, "Open "+state.String())
 	}
 	return nil
 }
 
 // Close is admin Close event, as defined in RFC1661
 func (lcp *LCP) Close(ctx context.Context) {
-	switch lcp.getState() {
+	state := lcp.getState()
+	switch state {
 	case StateStarting:
-		lcp.layerNotify(ctx, LCPLayerNotifyFinished)
-		lcp.setState(StateInitial)
+		lcp.layerNotify(ctx, LayerNotifyFinished)
+		lcp.setState(StateInitial, "Close "+state.String())
 	case StateStopped:
-		lcp.setState(StateClosed)
+		lcp.setState(StateClosed, "Close "+state.String())
 	case StateStopping:
-		lcp.setState(StateClosing)
+		lcp.setState(StateClosing, "Close "+state.String())
 	case StateReqSent, StateAckRcvd, StateAckSent:
 		// send term req
 		err := lcp.sendTermReq(ctx)
@@ -949,7 +921,7 @@ func (lcp *LCP) Close(ctx context.Context) {
 		}
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
 
-		lcp.setState(StateClosing)
+		lcp.setState(StateClosing, "Close "+state.String())
 	case StateOpened, StateEchoReqSent:
 		//send term req
 		err := lcp.sendTermReq(ctx)
@@ -957,71 +929,9 @@ func (lcp *LCP) Close(ctx context.Context) {
 			lcp.logger.Error().Err(err).Msg("failed to process TO+ event")
 			return
 		}
-		lcp.layerNotify(ctx, LCPLayerNotifyDown)
+		lcp.layerNotify(ctx, LayerNotifyDown)
 		atomic.StoreUint32(lcp.restartCount, lcp.maxRestart)
 
-		lcp.setState(StateClosing)
+		lcp.setState(StateClosing, "Close "+state.String())
 	}
-}
-
-// Modifier provides custom configuration for NewLCP()
-type Modifier func(lcp *LCP)
-
-// WithPeerOptionRule specify r as the PeerOptionRule
-func WithPeerOptionRule(r PeerOptionRule) Modifier {
-	return func(lcp *LCP) {
-		lcp.PeerRule = r
-	}
-}
-
-// WithOwnOptionRule specify r as the OwnOptionRule
-func WithOwnOptionRule(r OwnOptionRule) Modifier {
-	return func(lcp *LCP) {
-		lcp.OwnRule = r
-	}
-}
-
-// Options is a slice of LCPOption
-type Options []Option
-
-// Get return all options with type t
-func (options Options) Get(t uint8) (r Options) {
-	for _, o := range options {
-		if o.Type() == t {
-			r = append(r, o)
-		}
-	}
-	return
-}
-
-// GetFirst return 1st option with type t
-func (options Options) GetFirst(t uint8) Option {
-	for _, o := range options {
-		if o.Type() == t {
-			return o
-		}
-	}
-	return nil
-}
-
-// Del removes all options with type t
-func (options *Options) Del(t uint8) {
-	for i, o := range *options {
-		if o.Type() == t {
-			*options = append((*options)[:i], (*options)[i+1:]...)
-		}
-	}
-}
-
-// Append append newoptions
-func (options *Options) Append(newoptions Options) {
-	*options = append(*options, newoptions...)
-}
-
-// Replace removes all options with all options in newoptions, and append newoptions
-func (options *Options) Replace(newoptions Options) {
-	for _, o := range newoptions {
-		options.Del(o.Type())
-	}
-	options.Append(newoptions)
 }

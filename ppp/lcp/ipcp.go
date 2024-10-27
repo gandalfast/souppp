@@ -65,7 +65,7 @@ type DefaultIPCPOwnRule struct {
 }
 
 // GetOptions implements OwnOptionRule interface; a field will not be included as own option if it is nil
-func (own *DefaultIPCPOwnRule) GetOptions() (r Options) {
+func (own *DefaultIPCPOwnRule) GetOptions() (r []Option) {
 	own.mux.RLock()
 	defer own.mux.RUnlock()
 	if own.Addr != nil {
@@ -140,10 +140,10 @@ func (own *DefaultIPCPOwnRule) GetOption(o byte) Option {
 
 // HandlerConfRej handles Conf reject packet.
 // Option in conf-reject will not be included in next conf-req.
-func (own *DefaultIPCPOwnRule) HandlerConfRej(rcvd Options) {
+func (own *DefaultIPCPOwnRule) HandlerConfRej(received []Option) {
 	own.mux.Lock()
 	defer own.mux.Unlock()
-	for _, o := range rcvd {
+	for _, o := range received {
 		switch IPCPOptionType(o.Type()) {
 		case OpIPAddress:
 			own.Addr = nil
@@ -161,10 +161,10 @@ func (own *DefaultIPCPOwnRule) HandlerConfRej(rcvd Options) {
 
 // HandlerConfNAK handles Conf nak packet.
 // Option in conf-nak will be used as own value in next conf-req.
-func (own *DefaultIPCPOwnRule) HandlerConfNAK(rcvd Options) {
+func (own *DefaultIPCPOwnRule) HandlerConfNAK(received []Option) {
 	own.mux.Lock()
 	defer own.mux.Unlock()
-	for _, o := range rcvd {
+	for _, o := range received {
 		switch IPCPOptionType(o.Type()) {
 		case OpIPAddress:
 			own.Addr = o.(*IPv4AddrOption).Addr
@@ -198,13 +198,13 @@ func NewDefaultIPCPOwnRule() *DefaultIPCPOwnRule {
 type DefaultIPCPPeerRule struct{}
 
 // GetOptions always returns nil
-func (peer *DefaultIPCPPeerRule) GetOptions() Options {
+func (peer *DefaultIPCPPeerRule) GetOptions() []Option {
 	return nil
 }
 
 // HandlerConfReq will reject any options other than OpIPAddress, and ACK any OpIPAddress value;
-func (peer *DefaultIPCPPeerRule) HandlerConfReq(rcvd Options) (nak, reject Options) {
-	for _, o := range rcvd {
+func (peer *DefaultIPCPPeerRule) HandlerConfReq(received []Option) (nak, reject []Option) {
+	for _, o := range received {
 		switch IPCPOptionType(o.Type()) {
 		case OpIPAddress:
 		default:
