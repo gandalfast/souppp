@@ -2,7 +2,6 @@ package lcp
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 )
@@ -42,7 +41,7 @@ func (addr *IPv4AddrOption) GetPayload() []byte {
 }
 
 func (addr *IPv4AddrOption) String() string {
-	return fmt.Sprintf("%v:%v", addr.AddrType, addr.Addr)
+	return addr.AddrType.String() + ":" + addr.Addr.String()
 }
 
 func (addr *IPv4AddrOption) Equal(b Option) bool {
@@ -94,7 +93,7 @@ func (own *DefaultIPCPOwnRule) GetOptions() (r []Option) {
 	}
 	if own.SecondaryNBNS != nil {
 		r = append(r, &IPv4AddrOption{
-			AddrType: OpSecondaryDNSServerAddress,
+			AddrType: OpSecondaryNBNSServerAddress,
 			Addr:     own.SecondaryNBNS,
 		})
 	}

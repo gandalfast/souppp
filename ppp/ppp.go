@@ -30,6 +30,7 @@ const (
 // PPP represents the PPP protocol (built over PPPoE for usage over ethernet)
 type PPP struct {
 	Logger *zerolog.Logger
+	closed chan struct{}
 
 	// Data forwarding
 	relayChanList     map[ProtocolNumber]chan []byte
@@ -47,6 +48,7 @@ type PPP struct {
 func NewPPP(conn net.PacketConn, l *zerolog.Logger, generateReject func(b []byte) *Packet) *PPP {
 	r := new(PPP)
 	r.Logger = l
+	r.closed = make(chan struct{})
 	r.relayChanList = make(map[ProtocolNumber]chan []byte)
 	r.sendChan = make(chan []byte, _sendChanDepth)
 	r.conn = conn
@@ -55,8 +57,8 @@ func NewPPP(conn net.PacketConn, l *zerolog.Logger, generateReject func(b []byte
 }
 
 func (ppp *PPP) Start(ctx context.Context) {
-	go ppp.receive(ctx)
-	go ppp.send(ctx)
+	go ppp.receive()
+	go ppp.send()
 }
 
 // Register a new protocol over PPP.
@@ -93,18 +95,22 @@ func (ppp *PPP) Close() error {
 		close(ch)
 	}
 	ppp.relayChanListLock.Unlock()
+	close(ppp.closed)
+	close(ppp.sendChan)
 	return err
 }
 
-func (ppp *PPP) send(ctx context.Context) {
+func (ppp *PPP) send() {
 	for {
 		select {
-		case <-ctx.Done():
-			ppp.Logger.Info().Msg("PPP send routine stopped")
-			return
-		case b := <-ppp.sendChan:
+		case b, ok := <-ppp.sendChan:
+			if !ok {
+				ppp.Logger.Info().Msg("PPP send routine stopped")
+				return
+			}
 			_, err := ppp.conn.WriteTo(b, nil)
 			if err != nil && !errors.Is(err, etherconn.ErrTimeOut) {
+				ppp.Logger.Info().Msg("PPP send routine stopped")
 				ppp.Logger.Warn().Err(err).Msg("failed to send packet")
 				return
 			} else if err != nil {
@@ -114,8 +120,17 @@ func (ppp *PPP) send(ctx context.Context) {
 	}
 }
 
-func (ppp *PPP) receive(ctx context.Context) {
+func (ppp *PPP) receive() {
 	for {
+		select {
+		case _, ok := <-ppp.closed:
+			if !ok {
+				ppp.Logger.Info().Msg("PPP receive routine stopped")
+				return
+			}
+		default:
+		}
+
 		buf := make([]byte, MaxPPPMsgSize)
 		_ = ppp.conn.SetReadDeadline(time.Now().Add(_readTimeout))
 		n, _, err := ppp.conn.ReadFrom(buf)
@@ -126,12 +141,6 @@ func (ppp *PPP) receive(ctx context.Context) {
 			return
 		} else if err != nil {
 			// Skip this packet and go to the next if there is a timeout
-			select {
-			case <-ctx.Done():
-				ppp.Logger.Info().Msg("PPP receive routine stopped")
-				return
-			default:
-			}
 			continue
 		}
 

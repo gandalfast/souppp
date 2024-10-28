@@ -33,7 +33,7 @@ func NewConnAdapter(ppp *PPP, proto ProtocolNumber) *ConnAdapter {
 }
 
 func (c *ConnAdapter) Start(ctx context.Context) {
-	go c.recvHandling(ctx)
+	go c.recvHandling()
 }
 
 func (c *ConnAdapter) Register(k etherconn.L4RecvKey) (torecvch chan *etherconn.RelayReceival) {
@@ -95,17 +95,15 @@ func (c *ConnAdapter) Close() error {
 	return nil
 }
 
-func (c *ConnAdapter) recvHandling(ctx context.Context) {
-	var buf []byte
-	var receival *etherconn.RelayReceival
-	var err error
-	// runtime.LockOSThread()
+func (c *ConnAdapter) recvHandling() {
 	for {
 		select {
-		case <-ctx.Done():
-			return
-		case buf = <-c.recv:
-			receival, err = parsePacketIP(buf)
+		case buf, ok := <-c.recv:
+			if !ok {
+				return
+			}
+
+			receival, err := parsePacketIP(buf)
 			if err != nil {
 				continue
 			}
