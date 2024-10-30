@@ -1,18 +1,18 @@
-# zouppp
-![Build Status](https://github.com/gandalfast/zouppp/actions/workflows/main.yml/badge.svg)
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/gandalfast/zouppp)](https://pkg.go.dev/github.com/gandalfast/zouppp)
+# souppp
+![Build Status](https://github.com/gandalfast/souppp/actions/workflows/main.yml/badge.svg)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/gandalfast/souppp)](https://pkg.go.dev/github.com/gandalfast/souppp)
 
-zouppp is a set of GO modules implements PPPoE and related protocols:
+souppp is a set of GO modules implements PPPoE and related protocols:
 
- * zouppp/pppoe: PPPoE RFC2516
- * zouppp/pppoe/lcp: PPP/LCP RFC1661; IPCP RFC1332; IPv6CP RFC5072;
- * zouppp/auth/pap: PAP RFC1334
- * zouppp/auth/chap: CHAP RFC1994
- * zouppp/datapath: linux datapath
- * zouppp/client.ZouPPP: PPPoE Client
- * zouppp/client.DHCP6Clnt: DHCPv6 client
+ * souppp/pppoe: PPPoE RFC2516
+ * souppp/pppoe/lcp: PPP/LCP RFC1661; IPCP RFC1332; IPv6CP RFC5072;
+ * souppp/auth/pap: PAP RFC1334
+ * souppp/auth/chap: CHAP RFC1994
+ * souppp/datapath: linux datapath
+ * souppp/client.souppp: PPPoE Client
+ * souppp/client.DHCP6Clnt: DHCPv6 client
 
-**note: zouppp focus on client side, a PPPoE/PPP server requires addtional logic/code**
+**note: souppp focus on client side, a PPPoE/PPP server requires addtional logic/code**
 
 ## PPPoE Client
 The main module implements a PPPoE test client with load testing capability. it could also be used as a starting point to implement your own PPPoE client;
@@ -31,38 +31,38 @@ It has following key features:
 
 1. on interface eth1, create 100 PPPoE session, CHAP, IPv4 only, enable debug logging
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100`
 
 2. #1 variant, using PAP
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -authproto PAP`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -authproto PAP`
 
 3. #1 variant, using QinQ 100.200
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -vlan 100.200`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -vlan 100.200`
 
 4. #3 variant, using custom mac 
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -vlan 100.200 -mac "aa:bb:cc:11:22:33"`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -vlan 100.200 -mac "aa:bb:cc:11:22:33"`
 
 5. #1 variant, don't create PPP TUN interface
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -apply=false`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -apply=false`
 
 6. #1 variant, each session use different username and password, e.g. first one username is "testuser-0", 2nd one is "testuser-1" ..etc; password following same rule
 
-`zouppp -i eth1 -u testuser-@ID -p passwd123-@ID -l debug -v6=false -n 100`
+`souppp -i eth1 -u testuser-@ID -p passwd123-@ID -l debug -v6=false -n 100`
 
 7. #1 variant, each session add BBF remote-id tag, first session remote-id tag is "remote-id-0", 2nd one is "remote-id-1" ..etc;
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -rid remote-id-@id`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -rid remote-id-@id`
 
 8. #1 variant, use XDP socket;
 
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -xdp`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -v6=false -n 100 -xdp`
 
 9. #1 variant, running DHCPv6 over ppp, requesting IA_NA and IA_PD
-`zouppp -i eth1 -u testuser -p passwd123 -l debug -n 100 -dhcp6iana -dhcp6iapd`
+`souppp -i eth1 -u testuser -p passwd123 -l debug -n 100 -dhcp6iana -dhcp6iapd`
 
 ### CLI
 
@@ -91,7 +91,7 @@ a pppoe testing tool
         default:1
   - p: PAP/CHAP password
   - pppifname: name of PPP interface created after successfully dialing, must contain @ID
-        default:zouppp@ID
+        default:souppp@ID
   - profiling: enable profiling, dev use only
         default:false
   - retry: number of setup retry
@@ -111,7 +111,7 @@ a pppoe testing tool
         default:false
 
   -cfgfromfile: load configuration from the specified file
-        default:zouppp.conf
+        default:souppp.conf
 
 ```
 ### Config File

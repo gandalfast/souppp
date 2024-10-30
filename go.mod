@@ -1,4 +1,4 @@
-module github.com/gandalfast/zouppp
+module github.com/gandalfast/souppp
 
 go 1.22
 

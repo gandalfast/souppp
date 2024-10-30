@@ -4,7 +4,7 @@ package pap
 import (
 	"context"
 	"errors"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 	"github.com/rs/zerolog"
 	"time"
 )

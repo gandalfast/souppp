@@ -3,7 +3,7 @@ package lcp
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 	"strings"
 )
 

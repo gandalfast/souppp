@@ -3,7 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 	"github.com/rs/zerolog"
 	"net"
 	"os"
@@ -23,7 +23,7 @@ func genStrFunc(s string, id int) string {
 }
 
 // _defaultPPPIfNameTemplate is the default PPP interface name
-const _defaultPPPIfNameTemplate = "zouppp@ID"
+const _defaultPPPIfNameTemplate = "souppp@ID"
 
 // Setup holds common configuration for creating one or multiple Client sessions
 type Setup struct {

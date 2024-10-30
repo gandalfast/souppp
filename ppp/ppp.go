@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/gandalfast/zouppp/etherconn"
+	"github.com/gandalfast/souppp/etherconn"
 	"github.com/rs/zerolog"
 	"net"
 	"sync"

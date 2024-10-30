@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 )
 
 // Option is the LCP/IPCP/IPv6 option interface

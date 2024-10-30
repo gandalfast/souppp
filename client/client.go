@@ -4,7 +4,7 @@ package client
 import (
 	"context"
 	"errors"
-	"github.com/gandalfast/zouppp/etherconn"
+	"github.com/gandalfast/souppp/etherconn"
 	"math/rand/v2"
 	"sync"
 	"time"

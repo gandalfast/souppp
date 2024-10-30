@@ -4,7 +4,7 @@ package chap
 import (
 	"context"
 	"crypto/md5"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 	"github.com/rs/zerolog"
 	"time"
 )

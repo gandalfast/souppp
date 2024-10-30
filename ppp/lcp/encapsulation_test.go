@@ -2,7 +2,7 @@ package lcp
 
 import (
 	"encoding/hex"
-	"github.com/gandalfast/zouppp/ppp"
+	"github.com/gandalfast/souppp/ppp"
 	"testing"
 )
 

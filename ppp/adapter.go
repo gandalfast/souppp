@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/gandalfast/zouppp/etherconn"
+	"github.com/gandalfast/souppp/etherconn"
 	"net"
 	"sync"
 	"time"
