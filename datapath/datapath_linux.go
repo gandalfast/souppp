@@ -18,10 +18,11 @@ import (
 // TUNInterface is the TUN interface for a opened PPP session
 type TUNInterface struct {
 	logger                 *zerolog.Logger
+	pppProto               *ppp.PPP
 	netInterface           *water.Interface
-	netLink                netlink.Link
 	sendChan               chan []byte
 	v4recvChan, v6recvChan chan []byte
+	closed                 chan struct{}
 }
 
 // NewTUNIf creates a new TUN interface supporting PPP protocol.
@@ -29,7 +30,11 @@ type TUNInterface struct {
 // are copied into the TUN interface.
 // MTU value is the value of peerMRU parameter.
 func NewTUNIf(ctx context.Context, pppproto *ppp.PPP, name string, assignedAddrs []net.IP, peerMRU uint16) (tun *TUNInterface, err error) {
-	tun = new(TUNInterface)
+	tun = &TUNInterface{
+		pppProto: pppproto,
+		closed:   make(chan struct{}),
+	}
+
 	cfg := water.Config{
 		DeviceType: water.TUN,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -38,14 +43,13 @@ func NewTUNIf(ctx context.Context, pppproto *ppp.PPP, name string, assignedAddrs
 	}
 
 	// Create TUN interface
-	tun.netInterface, err = water.New(cfg)
-	if err != nil {
+	if tun.netInterface, err = water.New(cfg); err != nil {
 		return nil, fmt.Errorf("failed to create TUN interface %v, %w", cfg.Name, err)
 	}
 
 	// Enable network link
-	tun.netLink, _ = netlink.LinkByName(cfg.Name)
-	if err := netlink.LinkSetUp(tun.netLink); err != nil {
+	link, _ := netlink.LinkByName(cfg.Name)
+	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("failed to bring the TUN interface %v up, %w", cfg.Name, err)
 	}
 
@@ -71,8 +75,7 @@ func NewTUNIf(ctx context.Context, pppproto *ppp.PPP, name string, assignedAddrs
 			}
 
 			// Add default remote route to the interface
-			err = netlink.AddrAdd(tun.netLink, netAddr)
-			if err != nil {
+			if err := netlink.AddrAdd(link, netAddr); err != nil {
 				return nil, fmt.Errorf("failed to add addr %v, %w", addrString, err)
 			}
 		}
@@ -83,13 +86,21 @@ func NewTUNIf(ctx context.Context, pppproto *ppp.PPP, name string, assignedAddrs
 	if mtu < 1280 {
 		mtu = 1280
 	}
-	_ = netlink.LinkSetMTU(tun.netLink, mtu)
+	_ = netlink.LinkSetMTU(link, mtu)
 
 	logger := pppproto.Logger.With().Str("Name", "datapath").Logger()
 	tun.logger = &logger
+
 	go tun.send(ctx)
 	go tun.recv(ctx)
 	return tun, nil
+}
+
+func (tif *TUNInterface) Close() error {
+	tif.pppProto.Unregister(ppp.ProtoIPv4)
+	tif.pppProto.Unregister(ppp.ProtoIPv6)
+	close(tif.closed)
+	return tif.netInterface.Close()
 }
 
 // send pkt to outside network
@@ -99,8 +110,16 @@ func (tif *TUNInterface) send(ctx context.Context) {
 		buf := make([]byte, ppp.MaxPPPMsgSize)
 		n, err := tif.netInterface.Read(buf)
 		if err != nil {
-			tif.logger.Error().Err(err).Msg("failed to read net interface packet")
-			return
+			select {
+			case _, ok := <-tif.closed:
+				if !ok {
+					// Do nothing if interface is closed
+					return
+				}
+			default:
+				tif.logger.Error().Err(err).Msg("failed to read net interface packet")
+				return
+			}
 		}
 		buf = buf[:n]
 
@@ -108,8 +127,12 @@ func (tif *TUNInterface) send(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			tif.logger.Info().Msg("send routine stopped")
-			_ = tif.netInterface.Close()
 			return
+		case _, ok := <-tif.closed:
+			if !ok {
+				tif.logger.Info().Msg("send routine stopped")
+				return
+			}
 		default:
 		}
 
@@ -147,10 +170,19 @@ func (tif *TUNInterface) recv(ctx context.Context) {
 		case <-ctx.Done():
 			tif.logger.Info().Msg("recv routine stopped")
 			return
+		case _, ok := <-tif.closed:
+			if !ok {
+				tif.logger.Info().Msg("send routine stopped")
+				return
+			}
 		case pktbytes = <-tif.v4recvChan:
 			// Save data into pktbytes
 		case pktbytes = <-tif.v6recvChan:
 			// Save data into pktbytes
+		}
+
+		if len(pktbytes) < ppp.MinimumFrameSize {
+			continue
 		}
 
 		if _, err := tif.netInterface.Write(pktbytes); err != nil {

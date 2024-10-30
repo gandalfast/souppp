@@ -32,10 +32,6 @@ type Setup struct {
 
 	// if Apply is true, then create a PPP TUN interface with assigned addresses
 	Apply bool
-	// Number of retries
-	Retry uint
-	// Interval is the amount of time to wait between launching each session
-	Interval time.Duration
 	// Timeout is the connection setup time limit
 	Timeout time.Duration
 	// NumOfClients is the number of clients to be created
@@ -111,7 +107,34 @@ func (setup *Setup) Validate() error {
 		setup.StartMAC = iff.HardwareAddr
 	}
 
+	if setup.NumOfClients > 1 && setup.MacStep == 0 {
+		setup.MacStep = 1
+	}
+
 	return nil
+}
+
+func (setup *Setup) Clone(index int) *Setup {
+	return &Setup{
+		Logger:           setup.Logger,
+		LogLevel:         setup.LogLevel,
+		Apply:            setup.Apply,
+		Timeout:          setup.Timeout,
+		NumOfClients:     setup.NumOfClients,
+		StartMAC:         setup.StartMAC,
+		MacStep:          setup.MacStep,
+		InterfaceName:    setup.InterfaceName,
+		PPPInterfaceName: genStrFunc(setup.PPPInterfaceName, index),
+		RID:              genStrFunc(setup.RID, index),
+		CID:              genStrFunc(setup.CID, index),
+		AuthProto:        setup.AuthProto,
+		UserName:         genStrFunc(setup.UserName, index),
+		Password:         genStrFunc(setup.Password, index),
+		IPv4:             setup.IPv4,
+		IPv6:             setup.IPv6,
+		DHCPv6IANA:       setup.DHCPv6IANA,
+		DHCPv6IAPD:       setup.DHCPv6IAPD,
+	}
 }
 
 // LoggingLvl is the logging level of client

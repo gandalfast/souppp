@@ -178,7 +178,7 @@ const (
 	// _defaultRestartTimerDuration is the default restart timer duration
 	_defaultRestartTimerDuration = 10 * time.Second
 	// _defaultKeepAliveInterval is the default LCP keepalive interval
-	_defaultKeepAliveInterval = 5 * time.Second
+	_defaultKeepAliveInterval = 20 * time.Second
 )
 
 // NewLCP creates a new LCP/IPCP/IPv6CP according to the specific proto, runs over specified pppProto, calls h whenever there is layer event.
@@ -207,8 +207,11 @@ func (lcp *LCP) Start(ctx context.Context) {
 	// Keep alive handler
 	if lcp.protoType == ppp.ProtoLCP {
 		go func() {
+			ticker := time.NewTicker(_defaultKeepAliveInterval)
+			defer ticker.Stop()
+
 			select {
-			case <-lcp.keepAliveTimer.C:
+			case <-ticker.C:
 				switch lcp.getState() {
 				case StateOpened:
 					if err := lcp.sendEchoRequest(); err != nil {
@@ -260,18 +263,6 @@ func (lcp *LCP) setState(s State, caller string) {
 
 func (lcp *LCP) getState() State {
 	return State(lcp.state.Load())
-}
-
-func (lcp *LCP) resetKeepAliveTimer() {
-	if lcp.protoType != ppp.ProtoLCP {
-		return
-	}
-
-	lcp.logger.Debug().Msg("reset keepalive timer")
-	if !lcp.keepAliveTimer.Stop() {
-		<-lcp.keepAliveTimer.C
-	}
-	lcp.keepAliveTimer.Reset(_defaultKeepAliveInterval)
 }
 
 func (lcp *LCP) resetTimer() {
@@ -532,7 +523,6 @@ func (lcp *LCP) rcrPlus(req Packet) error {
 		}
 		lcp.layerNotify(LayerNotifyUp)
 		lcp.setState(StateOpened, "rcrPlus "+state.String())
-		lcp.resetKeepAliveTimer()
 	case StateAckSent:
 		// send conf-ack
 		if err := lcp.sendConfACK(req); err != nil {
@@ -623,7 +613,6 @@ func (lcp *LCP) rca(req Packet) error {
 		lcp.restartCount.Store(_defaultRestartCounter)
 		lcp.layerNotify(LayerNotifyUp)
 		lcp.setState(StateOpened, "rca "+state.String())
-		lcp.resetKeepAliveTimer()
 	case StateOpened, StateEchoReqSent:
 		lcp.layerNotify(LayerNotifyDown)
 		// send conf req
@@ -787,7 +776,6 @@ func (lcp *LCP) rxr(req Packet) error {
 		if lcp.getState() == StateEchoReqSent {
 			lcp.restartCount.Store(_defaultRestartCounter)
 			lcp.setState(StateOpened, "rxr")
-			lcp.resetKeepAliveTimer()
 		}
 	}
 	return nil
