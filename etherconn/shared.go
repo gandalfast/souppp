@@ -1,134 +1,134 @@
 package etherconn
 
 import (
+	"context"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"net"
 	"sync"
 	"time"
 )
 
-// L4RecvKey resprsents a Layer4 recv endpoint:
-// [0:15] bytes is the IP address,
-// [16] is the IP protocol,
-// [17:18] is the port number, in big endian
-type L4RecvKey [19]byte
-
-// NewL4RecvKeyViaUDPAddr returns a L4RecvKey from a net.UDPAddr
-func NewL4RecvKeyViaUDPAddr(uaddr *net.UDPAddr) (r L4RecvKey) {
-	copy(r[:16], uaddr.IP.To16())
-	r[16] = 17
-	binary.BigEndian.PutUint16(r[17:], uint16(uaddr.Port))
-	return r
-}
-
-type SharedEconn interface {
-	Register(k L4RecvKey) (torecvch chan *RelayReceival)
-	WriteIPPktTo(p []byte, dstmac net.HardwareAddr) (int, error)
+// SharedEthernetConn is a shared connection where multiple parallel
+// connections can be opened simultaneously over it.
+type SharedEthernetConn interface {
+	Register(key L4HashKey) chan *RelayReceival
+	WriteIPPktTo(p []byte, dstMac net.HardwareAddr) (int, error)
 	SetWriteDeadline(t time.Time) error
 }
 
-// SharingRUDPConn is the UDP connection could share same SharedEtherConn;
-type SharingRUDPConn struct {
-	udpconn          *RUDPConn
-	conn             SharedEconn
-	readDeadline     time.Time
-	readDeadlineLock *sync.RWMutex
-	recvChan         chan *RelayReceival
+// L4HashKey represents a Layer4 (transport) endpoint
+// hashed key.
+// [0:15] bytes is the IP address,
+// [16] is the IP protocol,
+// [17:18] is the port number, in big endian
+type L4HashKey [19]byte
+
+// NewL4HashKeyWithUDPAddr returns a L4HashKey from a net.UDPAddr
+func NewL4HashKeyWithUDPAddr(addr *net.UDPAddr) (r L4HashKey) {
+	copy(r[:16], addr.IP.To16())
+	r[16] = 17
+	binary.BigEndian.PutUint16(r[17:], uint16(addr.Port))
+	return r
 }
 
-// SharingRUDPConnOptions is is the option to customize new SharingRUDPConn
-type SharingRUDPConnOptions func(srudpc *SharingRUDPConn)
+// SharedRUDPConn is the UDP connection could share same SharedEtherConn;
+type SharedRUDPConn struct {
+	udpConn          *RUDPConn
+	conn             SharedEthernetConn
+	recvChan         chan *RelayReceival
+	readDeadline     time.Time
+	readDeadlineLock sync.RWMutex
+}
 
-// NewSharingRUDPConn creates a new SharingRUDPConn,
-// src is the string represents its UDP Address as format supported by net.ResolveUDPAddr().
-// c is the underlying SharedEtherConn,
-// roptions is a list of RUDPConnOptions that use for customization,
-// supported are: WithResolveNextHopMacFunc;
-// note unlike RUDPConn, SharingRUDPConn doesn't support acceptting pkt is not destinated to own address
-func NewSharingRUDPConn(src string, c SharedEconn, roptions []RUDPConnOption, options ...SharingRUDPConnOptions) (*SharingRUDPConn, error) {
-	r := new(SharingRUDPConn)
+// NewSharingRUDPConn creates a new SharedRUDPConn, to run a
+// UDP Conn over a custom SharedEtherConn network.
+// SharedRUDPConn doesn't support accepting packets for other MAC addresses,
+// and only WithResolveNextHopMacFunc option is supported.
+func NewSharingRUDPConn(src *net.UDPAddr, c SharedEthernetConn, roptions ...RUDPConnOption) (*SharedRUDPConn, error) {
+	r := new(SharedRUDPConn)
 	var err error
-	if r.udpconn, err = NewRUDPConn(src, nil, roptions...); err != nil {
+	if r.udpConn, err = NewRUDPConn(src, nil, roptions...); err != nil {
 		return nil, err
 	}
 	r.conn = c
-	r.readDeadlineLock = new(sync.RWMutex)
-	r.recvChan = c.Register(NewL4RecvKeyViaUDPAddr(r.udpconn.localAddress))
-	for _, opt := range options {
-		opt(r)
-	}
+	r.recvChan = c.Register(NewL4HashKeyWithUDPAddr(r.udpConn.localAddress))
 	return r, nil
 }
 
-// ReadFrom implment net.PacketConn interface, it returns UDP payload;
-func (sruc *SharingRUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	sruc.readDeadlineLock.RLock()
-	deadline := sruc.readDeadline
-	sruc.readDeadlineLock.RUnlock()
-	d := time.Until(deadline)
-	timeout := false
-	var receival *RelayReceival
-	if d > 0 {
-		select {
-		case <-time.After(d):
-			timeout = true
-		case receival = <-sruc.recvChan:
-		}
-	} else {
-		receival = <-sruc.recvChan
-	}
-	if receival == nil {
-		if timeout {
-			return 0, nil, ErrTimeOut
-		}
-		return 0, nil, fmt.Errorf("failed to read from SharedEtherConn")
-	}
-	copy(p, receival.TransportPayloadBytes)
-	return len(receival.TransportPayloadBytes), &net.UDPAddr{IP: receival.RemoteIP, Port: int(receival.RemotePort), Zone: "udp"}, nil
+func (shared *SharedRUDPConn) LocalAddr() net.Addr {
+	return shared.udpConn.LocalAddr()
 }
 
-// WriteTo implements net.PacketConn interface, it sends UDP payload;
-// This function adds UDP and IP header, and uses sruc's resolve function
-// to get nexthop's MAC address, and use underlying SharedEtherConn to send IP packet,
-// with SharedEtherConn's Ethernet encapsulation, to nexthop MAC address;
-// by default ResolveNexhopMACWithBrodcast is used for nexthop mac resolvement
-func (sruc *SharingRUDPConn) WriteTo(p []byte, addr net.Addr) (int, error) {
-	pktbuf, dstip := sruc.udpconn.buildPkt(p, sruc.udpconn.LocalAddr(), addr)
-	nexthopMAC := sruc.udpconn.resolveNexthopFunc(dstip)
-	_, err := sruc.conn.WriteIPPktTo(pktbuf, nexthopMAC)
-	if err != nil {
+func (shared *SharedRUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	shared.readDeadlineLock.RLock()
+	deadline := shared.readDeadline
+	shared.readDeadlineLock.RUnlock()
+
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	var received *RelayReceival
+	timeout := false
+
+	select {
+	case <-ctx.Done():
+		timeout = true
+	case received = <-shared.recvChan:
+		// Save received data into variable
+	}
+
+	if received == nil && timeout {
+		return 0, nil, ErrTimeOut
+	} else if received == nil {
+		return 0, nil, errors.New("failed to read from SharedEtherConn")
+	}
+
+	copy(p, received.TransportPayloadBytes)
+	return len(received.TransportPayloadBytes), &net.UDPAddr{IP: received.RemoteIP, Port: int(received.RemotePort), Zone: "udp"}, nil
+}
+
+// WriteTo sends UDP payload to the specified target.
+// This function adds UDP and IP headers, and uses RUDPConn's resolve function
+// to obtain next hop's MAC address, and use underlying EtherConn to send IP packet,
+// with EtherConn's Ethernet encapsulation.
+func (shared *SharedRUDPConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	srcAddr, ok := addr.(*net.UDPAddr)
+	if !ok {
+		return 0, errors.New("invalid source address")
+	}
+	destAddr, ok := addr.(*net.UDPAddr)
+	if !ok {
+		return 0, errors.New("invalid destination address")
+	}
+
+	buf, destIP := shared.udpConn.buildPacket(p, srcAddr, destAddr)
+	nextHopMAC := shared.udpConn.resolveNextHopFunc(destIP)
+	if _, err := shared.conn.WriteIPPktTo(buf, nextHopMAC); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
-// Close implements net.PacketConn interface, it closes underlying EtherConn
-func (sruc *SharingRUDPConn) Close() error {
+func (shared *SharedRUDPConn) SetReadDeadline(t time.Time) error {
+	shared.readDeadlineLock.Lock()
+	defer shared.readDeadlineLock.Unlock()
+
+	shared.readDeadline = t
 	return nil
 }
 
-// LocalAddr implements net.PacketConn interface, it returns its UDPAddr
-func (sruc *SharingRUDPConn) LocalAddr() net.Addr {
-	return sruc.udpconn.LocalAddr()
+func (shared *SharedRUDPConn) SetWriteDeadline(t time.Time) error {
+	return shared.conn.SetWriteDeadline(t)
 }
 
-// SetReadDeadline implements net.PacketConn interface
-func (sruc *SharingRUDPConn) SetReadDeadline(t time.Time) error {
-	sruc.readDeadlineLock.Lock()
-	defer sruc.readDeadlineLock.Unlock()
-	sruc.readDeadline = t
-	return nil
+func (shared *SharedRUDPConn) SetDeadline(t time.Time) error {
+	var errList []error
+	errList = append(errList, shared.SetReadDeadline(t))
+	errList = append(errList, shared.SetWriteDeadline(t))
+	return errors.Join(errList...)
 }
 
-// SetWriteDeadline implements net.PacketConn interface
-func (sruc *SharingRUDPConn) SetWriteDeadline(t time.Time) error {
-	return sruc.conn.SetWriteDeadline(t)
-}
-
-// SetDeadline implements net.PacketConn interface
-func (sruc *SharingRUDPConn) SetDeadline(t time.Time) error {
-	sruc.SetReadDeadline(t)
-	sruc.SetWriteDeadline(t)
+func (shared *SharedRUDPConn) Close() error {
 	return nil
 }

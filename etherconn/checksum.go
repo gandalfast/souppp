@@ -1,5 +1,7 @@
 package etherconn
 
+import "net"
+
 func tcpipChecksum(data []byte, csum uint32) uint16 {
 	// to handle odd lengths, we loop to length - 1, incrementing by 2, then
 	// handle the last byte specifically by checking against the original
@@ -20,21 +22,21 @@ func tcpipChecksum(data []byte, csum uint32) uint16 {
 	return ^uint16(csum)
 }
 
-func v6pseudoheaderChecksum(pHeader []byte) (csum uint32) {
-	SrcIP := pHeader[:16]
-	DstIP := pHeader[16:32]
+func pseudoHeaderChecksumV6(sourceIP, destIP *net.UDPAddr) (csum uint32) {
+	srcIP := sourceIP.IP.To16()[:16]
+	dstIP := destIP.IP.To16()[:16]
 	for i := 0; i < 16; i += 2 {
-		csum += uint32(SrcIP[i]) << 8
-		csum += uint32(SrcIP[i+1])
-		csum += uint32(DstIP[i]) << 8
-		csum += uint32(DstIP[i+1])
+		csum += uint32(srcIP[i]) << 8
+		csum += uint32(srcIP[i+1])
+		csum += uint32(dstIP[i]) << 8
+		csum += uint32(dstIP[i+1])
 	}
 	return csum
 }
 
-func v6udpChecksum(headerAndPayload, psudoHeader []byte) uint16 {
+func v6udpChecksum(headerAndPayload []byte, sourceIP, destIP *net.UDPAddr) uint16 {
 	length := uint32(len(headerAndPayload))
-	csum := v6pseudoheaderChecksum(psudoHeader)
+	csum := pseudoHeaderChecksumV6(sourceIP, destIP)
 	csum += uint32(17)
 	csum += length & 0xffff
 	csum += length >> 16

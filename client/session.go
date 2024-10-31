@@ -295,11 +295,18 @@ func (s *session) dialDHCPv6(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	rudpconn, err := etherconn.NewSharingRUDPConn(fmt.Sprintf("[%v]:%v",
-		lla, dhcpv6.DefaultClientPort), econn,
-		[]etherconn.RUDPConnOption{etherconn.WithAcceptAny(true)})
+
+	localAddress, err := net.ResolveUDPAddr(
+		"udp",
+		fmt.Sprintf("[%v]:%v", lla, dhcpv6.DefaultClientPort),
+	)
 	if err != nil {
-		s.cfg.Logger.Error().Err(err).Msg("failed to create SharingRUDPConn")
+		return err
+	}
+
+	rudpconn, err := etherconn.NewSharingRUDPConn(localAddress, econn)
+	if err != nil {
+		s.cfg.Logger.Error().Err(err).Msg("failed to create SharedRUDPConn")
 		return err
 	}
 
