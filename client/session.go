@@ -36,7 +36,7 @@ type session struct {
 	assignedIAPDs []*net.IPNet
 }
 
-func newSession(index int, cfg *Setup, relay etherconn.PacketRelay) (*session, error) {
+func newSession(index int, cfg *Setup, relay etherconn.PacketRelay, blacklist lcp.Blacklist) (*session, error) {
 	mac := cfg.StartMAC
 	if index > 0 {
 		var err error
@@ -78,7 +78,7 @@ func newSession(index int, cfg *Setup, relay etherconn.PacketRelay) (*session, e
 		return nil, err
 	}
 	s.lcpProto = lcp.NewLCP(ppp.ProtoLCP, s.pppProto, s.lcpEvtHandler, defPeerRule, lcp.NewDefaultOwnOptionRule())
-	s.ipcpV4Proto = lcp.NewLCP(ppp.ProtoIPCP, s.pppProto, s.ipcpEvtHandler, &lcp.DefaultIPCPPeerRule{}, lcp.NewDefaultIPCPOwnRule())
+	s.ipcpV4Proto = lcp.NewLCP(ppp.ProtoIPCP, s.pppProto, s.ipcpEvtHandler, &lcp.DefaultIPCPPeerRule{}, lcp.NewDefaultIPCPOwnRule(blacklist))
 	ipcp6rule := lcp.NewDefaultIP6CPRule(s.pppoeProto.LocalAddr().(*pppoe.Endpoint).L2EP)
 	s.ipv6cpProto = lcp.NewLCP(ppp.ProtoIPv6CP, s.pppProto, s.ipcp6EvtHandler, ipcp6rule, ipcp6rule)
 
@@ -104,9 +104,14 @@ func (s *session) Dial(ctx context.Context) error {
 		return err
 	}
 
+	ctxTimeout, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	defer cancel()
+
 	counter := int8(0)
 	for {
 		select {
+		case <-ctxTimeout.Done():
+			return ctxTimeout.Err()
 		case _, ok := <-s.closed:
 			if !ok {
 				return errors.New("session closed")

@@ -60,6 +60,7 @@ type DefaultIPCPOwnRule struct {
 	SecondaryDNS  net.IP
 	NBNS          net.IP
 	SecondaryNBNS net.IP
+	blacklist     Blacklist
 	mux           sync.RWMutex
 }
 
@@ -160,13 +161,16 @@ func (own *DefaultIPCPOwnRule) HandlerConfRej(received []Option) {
 
 // HandlerConfNAK handles Conf nak packet.
 // Option in conf-nak will be used as own value in next conf-req.
-func (own *DefaultIPCPOwnRule) HandlerConfNAK(received []Option) {
+func (own *DefaultIPCPOwnRule) HandlerConfNAK(received []Option) error {
 	own.mux.Lock()
 	defer own.mux.Unlock()
 	for _, o := range received {
 		switch IPCPOptionType(o.Type()) {
 		case OpIPAddress:
 			own.Addr = o.(*IPv4AddrOption).Addr
+			if ok := own.blacklist.IsValid(own.Addr); !ok {
+				return errors.New("received blacklisted IP")
+			}
 		case OpPrimaryDNSServerAddress:
 			own.DNS = o.(*IPv4AddrOption).Addr
 		case OpSecondaryDNSServerAddress:
@@ -177,11 +181,12 @@ func (own *DefaultIPCPOwnRule) HandlerConfNAK(received []Option) {
 			own.SecondaryNBNS = o.(*IPv4AddrOption).Addr
 		}
 	}
+	return nil
 }
 
 // NewDefaultIPCPOwnRule returns a new DefaultIPCPOwnRule,
 // with all addresses set to 0.0.0.0
-func NewDefaultIPCPOwnRule() *DefaultIPCPOwnRule {
+func NewDefaultIPCPOwnRule(blacklist Blacklist) *DefaultIPCPOwnRule {
 	ip := net.ParseIP("0.0.0.0")
 	return &DefaultIPCPOwnRule{
 		Addr:          ip,
@@ -189,6 +194,7 @@ func NewDefaultIPCPOwnRule() *DefaultIPCPOwnRule {
 		SecondaryDNS:  ip,
 		NBNS:          ip,
 		SecondaryNBNS: ip,
+		blacklist:     blacklist,
 	}
 }
 

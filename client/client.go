@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ppp/lcp"
 	"math/rand/v2"
+	"net"
 	"sync"
 	"time"
 )
@@ -16,6 +18,7 @@ type Client struct {
 	relayConn  etherconn.PacketRelay
 	sessionMtx sync.RWMutex
 	sessions   []*session
+	blacklist  lcp.Blacklist
 	closed     chan struct{}
 }
 
@@ -30,7 +33,12 @@ func NewClient(relayConn etherconn.PacketRelay, cfg *Setup) (*Client, error) {
 		relayConn: relayConn,
 		sessions:  make([]*session, cfg.NumOfClients),
 		closed:    make(chan struct{}),
+		blacklist: lcp.NewDefaultBlacklist(),
 	}, nil
+}
+
+func (c *Client) SetBlacklist(blacklist lcp.Blacklist) {
+	c.blacklist = blacklist
 }
 
 // Dial starts all the required initial sessions.
@@ -116,9 +124,9 @@ func (c *Client) GetValidSession(ctx context.Context) (int, error) {
 	}
 }
 
-func (c *Client) RestartSession(ctx context.Context, index int) error {
+func (c *Client) RestartSession(ctx context.Context, index int) (oldIPs []net.IP, err error) {
 	if index < 0 || index >= len(c.sessions) {
-		return errors.New("invalid session index")
+		return nil, errors.New("invalid session index")
 	}
 
 	c.sessionMtx.Lock()
@@ -129,14 +137,15 @@ func (c *Client) RestartSession(ctx context.Context, index int) error {
 	c.sessionMtx.Unlock()
 
 	if s == nil {
-		return errors.New("session is not started")
+		return nil, errors.New("session is not started")
 	}
 
+	oldIPs = append(s.assignedIANAs, s.assignedV4Addr)
 	if err := s.Close(); err != nil {
 		c.cfg.Logger.Error().Err(err).Int("index", index).Msg("Unable to close session in RestartSession")
 	}
 
-	return c.dialSessionLoop(ctx, index)
+	return oldIPs, c.dialSessionLoop(ctx, index)
 }
 
 func (c *Client) Close() error {
@@ -187,7 +196,7 @@ func (c *Client) dialSessionLoop(ctx context.Context, index int) error {
 }
 
 func (c *Client) dialSession(ctx context.Context, index int) (*session, error) {
-	s, err := newSession(index, c.cfg, c.relayConn)
+	s, err := newSession(index, c.cfg, c.relayConn, c.blacklist)
 	if err != nil {
 		return nil, err
 	}

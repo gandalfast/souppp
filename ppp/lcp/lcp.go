@@ -20,7 +20,7 @@ type OwnOptionRule interface {
 	// HandlerConfRej is the handler function to handle received Conf-Reject
 	HandlerConfRej(received []Option)
 	// HandlerConfNAK is the handler function to handle received Conf-Nak
-	HandlerConfNAK(received []Option)
+	HandlerConfNAK(received []Option) error
 	// GetOptions returns current own options
 	GetOptions() []Option
 	// GetOption returns current option with type o
@@ -83,7 +83,7 @@ func (own *DefaultOwnOptionRule) HandlerConfRej(received []Option) {
 }
 
 // HandlerConfNAK accepts all options listed in conf-nak
-func (own *DefaultOwnOptionRule) HandlerConfNAK(received []Option) {
+func (own *DefaultOwnOptionRule) HandlerConfNAK(received []Option) error {
 	toReplace := make(map[uint8]Option, len(received))
 	for _, opt := range received {
 		toReplace[opt.Type()] = opt
@@ -97,6 +97,7 @@ func (own *DefaultOwnOptionRule) HandlerConfNAK(received []Option) {
 			own.ownOptions[i] = newOpt
 		}
 	}
+	return nil
 }
 
 // PeerOptionRule is rule that use for handle received config-req from peer
@@ -629,7 +630,9 @@ func (lcp *LCP) rca(req Packet) error {
 func (lcp *LCP) rcn(req Packet) error {
 	switch req.Code {
 	case CodeConfigureNak:
-		lcp.OwnRule.HandlerConfNAK(req.Options)
+		if err := lcp.OwnRule.HandlerConfNAK(req.Options); err != nil {
+			return err
+		}
 	case CodeConfigureReject:
 		lcp.OwnRule.HandlerConfRej(req.Options)
 	}

@@ -144,13 +144,14 @@ func (r *DefaultIP6CPRule) HandlerConfRej(received []Option) {
 }
 
 // HandlerConfNAK implements OwnOptionRule interface, generate a new interface-id if interface-id is NAK-ed.
-func (r *DefaultIP6CPRule) HandlerConfNAK(received []Option) {
+func (r *DefaultIP6CPRule) HandlerConfNAK(received []Option) error {
 	for _, opt := range received {
 		if opt.Type() == uint8(IP6CPOpInterfaceIdentifier) {
 			r.IfID.Store(r.ifIDGenerator().toUint64())
 			break
 		}
 	}
+	return nil
 }
 
 // HandlerConfReq implements PeerOptionRule interface,
