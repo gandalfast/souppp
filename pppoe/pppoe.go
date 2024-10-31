@@ -92,7 +92,7 @@ func (pppoe *PPPoE) SetDeadline(t time.Time) error {
 // LocalAddr return local Endpoint, see doc of Endpoint
 func (pppoe *PPPoE) LocalAddr() net.Addr {
 	return &Endpoint{
-		L2EP:      pppoe.conn.LocalAddr().HwAddr,
+		L2EP:      pppoe.conn.LocalAddr().(*etherconn.L2Endpoint).HwAddr,
 		SessionID: pppoe.sessionID,
 	}
 }
@@ -160,7 +160,7 @@ func (pppoe *PPPoE) WriteTo(p []byte, _ net.Addr) (n int, err error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to serialize pppoe packet: %w", err)
 	}
-	_, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoESession, pppoe.acMAC)
+	_, err = pppoe.conn.WritePacketTo(pktbytes, EtherTypePPPoESession, pppoe.acMAC)
 	if err != nil {
 		return 0, fmt.Errorf("failed to send pppoe packet: %w", err)
 	}
@@ -170,7 +170,7 @@ func (pppoe *PPPoE) WriteTo(p []byte, _ net.Addr) (n int, err error) {
 // ReadFrom only works after PPPoE session is open.
 func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 	for {
-		n, l2ep, err := pppoe.conn.ReadPktFrom(buf)
+		n, l2ep, err := pppoe.conn.ReadPacketFrom(buf)
 		if err != nil {
 			return 0, nil, fmt.Errorf("failed to recv, %w", err)
 		}
@@ -207,7 +207,7 @@ func (pppoe *PPPoE) Close() error {
 		if err != nil {
 			return err
 		}
-		_, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, pppoe.acMAC)
+		_, err = pppoe.conn.WritePacketTo(pktbytes, EtherTypePPPoEDiscovery, pppoe.acMAC)
 		pppoe.logger.Info().Err(err).Any("pkt", pkt).Msg("Closing PPPoE connection")
 		atomic.StoreUint32(&pppoe.state, pppoeStateClosed)
 	}
@@ -246,7 +246,7 @@ func (pppoe *PPPoE) exchangePacket(ctx context.Context, req Packet, code Code, d
 	}
 
 	for i := 0; i < _defaultRetryPPPoE; i++ {
-		if _, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, dst); err != nil {
+		if _, err = pppoe.conn.WritePacketTo(pktbytes, EtherTypePPPoEDiscovery, dst); err != nil {
 			return resp, nil, err
 		}
 
@@ -260,7 +260,7 @@ func (pppoe *PPPoE) exchangePacket(ctx context.Context, req Packet, code Code, d
 		}
 		_ = pppoe.conn.SetReadDeadline(timeout)
 
-		receivedPacketBuf, l2ep, err := pppoe.conn.ReadPkt()
+		receivedPacketBuf, l2ep, err := pppoe.conn.ReadPacket()
 		if err != nil && errors.Is(err, etherconn.ErrTimeOut) {
 			continue
 		} else if err != nil {

@@ -49,8 +49,8 @@ func newSession(index int, cfg *Setup, relay etherconn.PacketRelay, blacklist lc
 	etherConn := etherconn.NewEtherConn(
 		mac,
 		relay,
-		etherconn.WithEtherTypes([]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession}),
-		etherconn.WithRecvMulticast(true),
+		[]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession},
+		etherconn.WithReceiveMulticast(true),
 	)
 
 	cfg = cfg.Clone(index)

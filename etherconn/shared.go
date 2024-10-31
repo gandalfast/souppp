@@ -2,7 +2,6 @@ package etherconn
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"net"
 	"sync"
@@ -12,31 +11,17 @@ import (
 // SharedEthernetConn is a shared connection where multiple parallel
 // connections can be opened simultaneously over it.
 type SharedEthernetConn interface {
-	Register(key L4HashKey) chan *RelayReceival
+	Register(key L4HashKey) chan *EthernetResponse
+	Unregister(k L4HashKey)
 	WriteIPPktTo(p []byte, dstMac net.HardwareAddr) (int, error)
 	SetWriteDeadline(t time.Time) error
-}
-
-// L4HashKey represents a Layer4 (transport) endpoint
-// hashed key.
-// [0:15] bytes is the IP address,
-// [16] is the IP protocol,
-// [17:18] is the port number, in big endian
-type L4HashKey [19]byte
-
-// NewL4HashKeyWithUDPAddr returns a L4HashKey from a net.UDPAddr
-func NewL4HashKeyWithUDPAddr(addr *net.UDPAddr) (r L4HashKey) {
-	copy(r[:16], addr.IP.To16())
-	r[16] = 17
-	binary.BigEndian.PutUint16(r[17:], uint16(addr.Port))
-	return r
 }
 
 // SharedRUDPConn is the UDP connection could share same SharedEtherConn;
 type SharedRUDPConn struct {
 	udpConn          *RUDPConn
 	conn             SharedEthernetConn
-	recvChan         chan *RelayReceival
+	recvChan         chan *EthernetResponse
 	readDeadline     time.Time
 	readDeadlineLock sync.RWMutex
 }
@@ -68,20 +53,14 @@ func (shared *SharedRUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
-	var received *RelayReceival
-	timeout := false
-
+	var received *EthernetResponse
 	select {
 	case <-ctx.Done():
-		timeout = true
-	case received = <-shared.recvChan:
-		// Save received data into variable
-	}
-
-	if received == nil && timeout {
 		return 0, nil, ErrTimeOut
-	} else if received == nil {
-		return 0, nil, errors.New("failed to read from SharedEtherConn")
+	case received = <-shared.recvChan:
+		if received == nil {
+			return 0, nil, errors.New("failed to read from SharedEtherConn")
+		}
 	}
 
 	copy(p, received.TransportPayloadBytes)
