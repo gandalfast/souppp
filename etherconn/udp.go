@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var BroadCastMAC = net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+
 // NextHopResolver resolves the target MAC address for the destination
 // given its IP.
 type NextHopResolver func(net.IP) net.HardwareAddr
@@ -76,7 +78,7 @@ func NewRUDPConn(src *net.UDPAddr, c *EtherConn, options ...RUDPConnOption) (*RU
 		r.ipHeader = make([]byte, 20)
 		r.ipHeader[0] = 0x45                                 // Version + IHL (20 bytes)
 		r.ipHeader[8] = _defaultTTL                          // TTL
-		r.ipHeader[9] = _udpProtocol                         // Protocol (17 = UDP)
+		r.ipHeader[9] = _udpProtocol                         // Protocol
 		copy(r.ipHeader[12:16], r.localAddress.IP.To4()[:4]) // src addr
 	}
 
@@ -90,13 +92,13 @@ func (ruc *RUDPConn) LocalAddr() net.Addr {
 
 // ReadFrom implements net.PacketConn interface, and copies UDP payload to p.
 // Note: the underlying EtherConn will send all received packets as
-// *RelayReceival to RUDPConn, RUDPConn will ignore packets that aren't
+// *EthernetResponse to RUDPConn, RUDPConn will ignore packets that aren't
 // destined to its UDPAddr, unless WithAcceptAny(true) is specified
 // when creating the RUDPConn.
 // In that case, RUDPConn will accept any UDP packet.
 func (ruc *RUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	for {
-		receival, err := ruc.conn.getReceival()
+		receival, err := ruc.conn.getReceivedData()
 		if err != nil {
 			return 0, nil, err
 		}
@@ -121,7 +123,7 @@ func (ruc *RUDPConn) WriteTo(p []byte, dstAddr net.Addr) (int, error) {
 
 	buf, destinationIP := ruc.buildPacket(p, ruc.localAddress, dst)
 	nextHopMAC := ruc.resolveNextHopFunc(destinationIP)
-	if _, err := ruc.conn.WriteIPPktTo(buf, nextHopMAC); err != nil {
+	if _, err := ruc.conn.WriteIPData(buf, nextHopMAC); err != nil {
 		return 0, err
 	}
 	return len(p), nil

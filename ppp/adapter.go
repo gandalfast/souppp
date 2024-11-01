@@ -11,12 +11,13 @@ import (
 	"time"
 )
 
-// ConnAdapter wraps a PPP connection into the etherconn.SharedEconn interface.
+// ConnAdapter wraps a PPP connection into the etherconn.SharedEthernetConn interface.
 type ConnAdapter struct {
 	ppp               *PPP
 	proto             ProtocolNumber
 	send, recv        chan []byte
-	recvList          *etherconn.ChanMap
+	recvList          map[etherconn.L4HashKey]chan *etherconn.EthernetResponse
+	recvListMtx       sync.RWMutex
 	writeDeadline     time.Time
 	writeDeadlineLock sync.RWMutex
 }
@@ -28,30 +29,36 @@ func NewConnAdapter(ppp *PPP, proto ProtocolNumber) *ConnAdapter {
 	r.ppp = ppp // PPP session must be already started with Start()
 	r.proto = proto
 	r.send, r.recv = ppp.Register(proto)
-	r.recvList = etherconn.NewChanMap()
+	r.recvList = make(map[etherconn.L4HashKey]chan *etherconn.EthernetResponse)
 	return r
 }
 
 func (c *ConnAdapter) Start(ctx context.Context) {
-	go c.recvHandling()
+	go c.receiveHandling()
 }
 
-func (c *ConnAdapter) Register(k etherconn.L4RecvKey) (torecvch chan *etherconn.RelayReceival) {
-	return c.RegisterList([]etherconn.L4RecvKey{k})
-}
-
-func (c *ConnAdapter) RegisterList(keys []etherconn.L4RecvKey) (torecvch chan *etherconn.RelayReceival) {
-	ch := make(chan *etherconn.RelayReceival, _defaultPerClntRecvChanDepth)
-	list := make([]any, len(keys))
-	for i := range keys {
-		list[i] = keys[i]
+func (c *ConnAdapter) Register(k etherconn.L4HashKey) (torecvch chan *etherconn.EthernetResponse) {
+	ch := make(chan *etherconn.EthernetResponse, _defaultPerClntRecvChanDepth)
+	c.recvListMtx.Lock()
+	if old, ok := c.recvList[k]; ok {
+		close(old)
 	}
-	c.recvList.SetList(list, ch)
+	c.recvList[k] = ch
+	c.recvListMtx.Unlock()
 	return ch
 }
 
-// WriteIPPktTo implements etherconn.SharedEconn interface. dstmac is not used at all.
-func (c *ConnAdapter) WriteIPPktTo(p []byte, dstmac net.HardwareAddr) (int, error) {
+func (c *ConnAdapter) Unregister(k etherconn.L4HashKey) {
+	c.recvListMtx.Lock()
+	if old, ok := c.recvList[k]; ok {
+		close(old)
+		delete(c.recvList, k)
+	}
+	c.recvListMtx.Unlock()
+}
+
+// WriteIPPktTo implements etherconn.SharedEthernetConn interface. dstmac is not used at all.
+func (c *ConnAdapter) WriteIPPktTo(p []byte, _ net.HardwareAddr) (int, error) {
 	c.writeDeadlineLock.RLock()
 	deadline := c.writeDeadline
 	c.writeDeadlineLock.RUnlock()
@@ -71,8 +78,11 @@ func (c *ConnAdapter) WriteIPPktTo(p []byte, dstmac net.HardwareAddr) (int, erro
 	copy(buf[2:], p)
 
 	ctx := context.Background()
-	ctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -92,10 +102,17 @@ func (c *ConnAdapter) SetWriteDeadline(t time.Time) error {
 
 func (c *ConnAdapter) Close() error {
 	c.ppp.Unregister(c.proto)
+
+	c.recvListMtx.Lock()
+	for key, ch := range c.recvList {
+		close(ch)
+		delete(c.recvList, key)
+	}
+	c.recvListMtx.Unlock()
 	return nil
 }
 
-func (c *ConnAdapter) recvHandling() {
+func (c *ConnAdapter) receiveHandling() {
 	for {
 		select {
 		case buf, ok := <-c.recv:
@@ -103,34 +120,37 @@ func (c *ConnAdapter) recvHandling() {
 				return
 			}
 
-			receival, err := parsePacketIP(buf)
+			received, err := parsePacketIP(buf)
 			if err != nil {
 				continue
 			}
 
-			if ch := c.recvList.Get(receival.GetL4Key()); ch != nil {
-				//found registed channel
-			L99:
-				for {
-					select {
-					case ch <- receival:
-						break L99
-					default:
-						//channel is full, remove oldest pkt
-						<-ch
-					}
+			ch, ok := c.recvList[etherconn.NewL4HashKeyWithEthernet(received)]
+			if !ok {
+				continue
+			}
+
+			// Found registered channel
+			finished := false
+			for !finished {
+				select {
+				case ch <- received:
+					finished = true
+				default:
+					// channel is full, remove oldest packet
+					<-ch
 				}
 			}
 		}
 	}
 }
 
-func parsePacketIP(pkt []byte) (*etherconn.RelayReceival, error) {
+func parsePacketIP(pkt []byte) (*etherconn.EthernetResponse, error) {
 	if len(pkt) < MinimumFrameSize {
 		return nil, fmt.Errorf("pkt smaller than 20 bytes")
 	}
 
-	rcv := &etherconn.RelayReceival{
+	rcv := &etherconn.EthernetResponse{
 		EtherPayloadBytes: pkt,
 	}
 

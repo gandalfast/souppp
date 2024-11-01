@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	_defaultTimeout     = 4 * time.Second
+	_defaultTimeout     = 500 * time.Millisecond
 	_defaultRetryNumber = 3
 )
 
@@ -24,18 +24,19 @@ type PAP struct {
 
 // NewPAP creates a new PAP instance with uname, Password;
 // uses pppProtol as the underlying PPP protocol;
-func NewPAP(pppProto *ppp.PPP) *PAP {
+func NewPAP(pppProto *ppp.PPP, requestID uint8) *PAP {
 	r := new(PAP)
 	r.sendChan, r.recvChan = pppProto.Register(ppp.ProtoPAP)
 	logger := pppProto.Logger.With().Str("Name", "PAP").Logger()
 	r.logger = &logger
+	r.requestID = requestID
 	return r
 }
 
 func (pap *PAP) getResponse(ctx context.Context, req Packet) (resp Packet, err error) {
 	for i := 0; i < _defaultRetryNumber; i++ {
 		// Increase request ID counter
-		pap.requestID++
+		pap.requestID--
 		req.ID = pap.requestID
 
 		// Send request
