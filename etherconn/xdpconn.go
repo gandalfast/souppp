@@ -2,6 +2,7 @@ package etherconn
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/binary"
 	"errors"
@@ -100,16 +101,18 @@ func newXdpSocket(
 }
 
 func (s *xdpSock) start() {
+	s.relay.socksWg.Add(2)
 	go s.receive()
 	go s.send(s.relay.sendingMode)
 }
 
 func (s *xdpSock) Close() error {
 	close(s.closed)
-	return s.sock.Close()
+	return nil
 }
 
 func (s *xdpSock) send(mode xdpSendingMode) {
+	defer s.relay.socksWg.Done()
 	runtime.LockOSThread()
 	dataList := make([][]byte, 32)
 	dataListLen := len(dataList)
@@ -119,11 +122,11 @@ func (s *xdpSock) send(mode xdpSendingMode) {
 
 	timeoutDuration := 3 * time.Second
 	t := time.NewTimer(timeoutDuration)
+	defer t.Stop()
 
 	for {
 		select {
 		case <-s.closed:
-			t.Stop()
 			return
 		default:
 		}
@@ -202,6 +205,7 @@ func (s *xdpSock) receivePolling(timeout int) (int, error) {
 }
 
 func (s *xdpSock) receive() {
+	defer s.relay.socksWg.Done()
 	runtime.LockOSThread()
 	for {
 		select {
@@ -253,6 +257,7 @@ type XDPRelay struct {
 	logger *zerolog.Logger
 	ifName string
 	ifLink netlink.Link
+	closed atomic.Bool
 
 	// eBPF
 	bpfProg     *xdp.Program
@@ -266,6 +271,7 @@ type XDPRelay struct {
 	maxEtherFrameSize uint
 	umemNumOfTrunks   uint
 	sockList          []*xdpSock
+	socksWg           sync.WaitGroup
 	queueIDList       []int
 
 	// Ethernet
@@ -431,13 +437,6 @@ func (xr *XDPRelay) Register(ks []L2EndpointKey, recvMulticast bool) (chan *Ethe
 
 	xr.listMtx.Lock()
 	for i := range ks {
-		old, ok := xr.recvList[ks[i]]
-		if ok {
-			select {
-			case <-old.stop:
-				close(old.stop)
-			}
-		}
 		xr.recvList[ks[i]] = ethernetMapEntry{
 			registrationID: registrationID,
 			ch:             ch,
@@ -449,10 +448,6 @@ func (xr *XDPRelay) Register(ks []L2EndpointKey, recvMulticast bool) (chan *Ethe
 	if recvMulticast {
 		// NOTE: only set one key in multicast, otherwise the EtherConn will receive multiple copies
 		xr.listMtx.Lock()
-		old, ok := xr.multicastList[ks[0]]
-		if ok {
-			close(old.stop)
-		}
 		xr.multicastList[ks[0]] = ethernetMapEntry{
 			registrationID: registrationID,
 			ch:             ch,
@@ -465,16 +460,23 @@ func (xr *XDPRelay) Register(ks []L2EndpointKey, recvMulticast bool) (chan *Ethe
 }
 
 func (xr *XDPRelay) Unregister(registrationID int) {
+	var closed bool
 	xr.listMtx.Lock()
-	for key, r := range xr.multicastList {
-		if r.registrationID == registrationID {
-			close(r.stop)
+	for key, old := range xr.multicastList {
+		if old.registrationID == registrationID {
+			if !closed {
+				close(old.stop)
+				closed = true
+			}
 			delete(xr.multicastList, key)
 		}
 	}
-	for key, r := range xr.recvList {
-		if r.registrationID == registrationID {
-			close(r.stop)
+	for key, old := range xr.recvList {
+		if old.registrationID == registrationID {
+			if !closed {
+				close(old.stop)
+				closed = true
+			}
 			delete(xr.recvList, key)
 		}
 	}
@@ -482,20 +484,31 @@ func (xr *XDPRelay) Unregister(registrationID int) {
 }
 
 func (xr *XDPRelay) Close() error {
+	if !xr.closed.CompareAndSwap(false, true) {
+		// Make sure to close only once
+		return nil
+	}
+
 	xr.logger.Debug().Msg("relay stopping")
-
-	xr.listMtx.Lock()
-	for _, r := range xr.multicastList {
-		close(r.stop)
+	// Signal closing to socket goroutines
+	for _, s := range xr.sockList {
+		_ = s.Close()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		xr.socksWg.Wait()
+		done <- struct{}{}
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
 
-	for _, r := range xr.recvList {
-		close(r.stop)
-	}
-	xr.listMtx.Unlock()
-
-	for _, sock := range xr.sockList {
-		_ = sock.Close()
+	// Close XDP sockets
+	for _, s := range xr.sockList {
+		_ = s.sock.Close()
 	}
 
 	for _, qid := range xr.queueIDList {
@@ -550,7 +563,7 @@ func loadEBPFProgViaReader(r io.ReaderAt, funcname, qidmapname, xskmapname, ethe
 	return prog, elist, nil
 }
 
-// setPromiscuousMode put the interface in Promisc mode
+// setPromiscuousMode put the interface in promiscuous mode
 func setPromiscuousMode(interfaceName string) error {
 	target, err := net.InterfaceByName(interfaceName)
 	if err != nil {
@@ -580,8 +593,6 @@ func (s *xdpSock) handleReceivedPacket(pktData []byte) {
 	}
 
 	receivedData := parseReceivedData(pktData)
-	fmt.Println("ZZZZZZZZZZ")
-
 	s.logger.Debug().Msgf("got pkt with l2epkey %v", receivedData.LocalEndpoint.GetKey().String())
 
 	s.relay.listMtx.RLock()
@@ -589,7 +600,7 @@ func (s *xdpSock) handleReceivedPacket(pktData []byte) {
 	s.relay.listMtx.RUnlock()
 
 	if ok {
-		sendDataToChan(receivedData, received.ch)
+		s.sendDataToChan(receivedData, received.ch)
 		return
 	}
 
@@ -602,26 +613,26 @@ func (s *xdpSock) handleReceivedPacket(pktData []byte) {
 		}
 		s.relay.listMtx.RUnlock()
 
-		if len(mList) > 0 {
-			for _, multicastChan := range mList {
-				receivedData.EtherBytes = pktData
-				sendDataToChan(receivedData, multicastChan)
-			}
-		} else {
-			s.logger.Debug().Msg("ignored a multicast pkt")
+		for _, multicastChan := range mList {
+			s.sendDataToChan(receivedData, multicastChan)
+		}
+		if len(mList) == 0 {
+			s.logger.Debug().Msg("ignored a multicast packet")
 		}
 	} else {
 		// unicast, receiver not found
-		s.logger.Debug().Msgf("can't find match l2ep %s", receivedData.LocalEndpoint.GetKey().String())
+		s.logger.Debug().Msgf("can't find matching l2ep %s", receivedData.LocalEndpoint.GetKey().String())
 	}
 }
 
-func sendDataToChan(received *EthernetResponse, ch chan *EthernetResponse) {
+func (s *xdpSock) sendDataToChan(received *EthernetResponse, ch chan *EthernetResponse) {
 	if len(received.EtherPayloadBytes) == 0 {
 		return
 	}
 	for { //keep sending until pkt is sent to channel
 		select {
+		case <-s.closed:
+			return
 		case ch <- received:
 			return
 		default:
@@ -633,9 +644,13 @@ func sendDataToChan(received *EthernetResponse, ch chan *EthernetResponse) {
 // parseReceivedData parse received ethernet pkt, p is a ethernet packet in byte slice,
 func parseReceivedData(p []byte) *EthernetResponse {
 	rcv := &EthernetResponse{
-		EtherBytes:     p,
-		LocalEndpoint:  &L2Endpoint{},
-		RemoteEndpoint: &L2Endpoint{},
+		EtherBytes: p,
+		LocalEndpoint: &L2Endpoint{
+			HwAddr: make([]byte, 6),
+		},
+		RemoteEndpoint: &L2Endpoint{
+			HwAddr: make([]byte, 6),
+		},
 	}
 
 	copy(rcv.LocalEndpoint.HwAddr, p[:6])    // dst mac
@@ -644,12 +659,16 @@ func parseReceivedData(p []byte) *EthernetResponse {
 	index := 12
 	for {
 		ethernetType := binary.BigEndian.Uint16(p[index : index+2])
+		// 0x88A8: Service VLAN tag
+		// 8x8100: 802.11q (VLAN)
 		if ethernetType != 0x8100 && ethernetType != 0x88a8 {
 			rcv.LocalEndpoint.EthernetType = ethernetType
 			break
 		}
 		index += 4
 	}
+	rcv.RemoteEndpoint.EthernetType = rcv.LocalEndpoint.EthernetType
+	// Save only payload (without header)
 	rcv.EtherPayloadBytes = p[index+2:]
 
 	var l4index int
@@ -672,9 +691,6 @@ func parseReceivedData(p []byte) *EthernetResponse {
 		rcv.LocalPort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index+2 : l4index+4])
 		rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+8:]
 	}
-	rcv.RemoteEndpoint.EthernetType = rcv.LocalEndpoint.EthernetType
-
-	fmt.Println(rcv)
 
 	return rcv
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 type session struct {
@@ -173,6 +174,7 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 			return
 		}
 
+		startingAuthTime := time.Now()
 		authProto := opauthlist[0].(*lcp.OpAuthProto).Proto
 		switch authProto {
 		case ppp.ProtoCHAP:
@@ -183,7 +185,6 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 				_ = s.Close()
 				return
 			}
-			s.cfg.Logger.Info().Msg("auth succeed")
 		case ppp.ProtoPAP:
 			papProto := pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier)
 			err := papProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password)
@@ -192,12 +193,12 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 				_ = s.Close()
 				return
 			}
-			s.cfg.Logger.Info().Msg("auth succeed")
 		default:
 			s.cfg.Logger.Error().Msgf("unkown auth method negoatied %v", authProto)
 			_ = s.Close()
 			return
 		}
+		s.cfg.Logger.Info().TimeDiff("time", time.Now(), startingAuthTime).Msg("auth succeed")
 
 		if s.cfg.IPv4 {
 			s.dialChan <- 1
