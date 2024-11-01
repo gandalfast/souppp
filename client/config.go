@@ -51,6 +51,8 @@ type Setup struct {
 	CID string
 	// AuthProto is the authentication protocol to use, e.g. lcp.ProtoCHAP or lcp.ProtoPAP
 	AuthProto ppp.ProtocolNumber
+	// InitialAuthIdentifier is the starting value for the incremental authentication Identifier
+	InitialAuthIdentifier uint8
 	// UserName for PAP/CHAP auth
 	UserName string
 	// Password for PAP/CHAP auth

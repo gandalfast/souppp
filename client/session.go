@@ -185,7 +185,7 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 			}
 			s.cfg.Logger.Info().Msg("auth succeed")
 		case ppp.ProtoPAP:
-			papProto := pap.NewPAP(s.pppProto)
+			papProto := pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier)
 			err := papProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password)
 			if err != nil {
 				s.cfg.Logger.Error().Err(err).Msg("auth failed")

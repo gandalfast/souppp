@@ -78,8 +78,11 @@ func (c *ConnAdapter) WriteIPPktTo(p []byte, _ net.HardwareAddr) (int, error) {
 	copy(buf[2:], p)
 
 	ctx := context.Background()
-	ctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+	}
 
 	select {
 	case <-ctx.Done():

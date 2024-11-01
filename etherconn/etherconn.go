@@ -133,8 +133,12 @@ func (ec *EtherConn) WritePacketTo(p []byte, ethernetType uint16, destMac net.Ha
 	deadline := ec.writeDeadline
 	ec.deadlineMtx.RUnlock()
 
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
+	ctx := context.Background()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+	}
 
 	select {
 	case <-ec.closedChan:
@@ -180,8 +184,12 @@ func (ec *EtherConn) getReceivedData() (*EthernetResponse, error) {
 	deadline := ec.readDeadline
 	ec.deadlineMtx.RUnlock()
 
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
+	ctx := context.Background()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+	}
 
 	var received *EthernetResponse
 	select {

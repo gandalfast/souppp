@@ -50,8 +50,12 @@ func (shared *SharedRUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	deadline := shared.readDeadline
 	shared.readDeadlineLock.RUnlock()
 
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
+	ctx := context.Background()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
+	}
 
 	var received *EthernetResponse
 	select {
