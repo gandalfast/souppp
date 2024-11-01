@@ -16,38 +16,45 @@ const (
 
 // PAP is the PAP protocol implementation
 type PAP struct {
-	logger    *zerolog.Logger
-	sendChan  chan []byte
-	recvChan  chan []byte
-	requestID uint8
+	logger            *zerolog.Logger
+	sendChan          chan []byte
+	recvChan          chan []byte
+	requestID         uint8
+	concurrentRetries int
 }
 
 // NewPAP creates a new PAP instance with uname, Password;
 // uses pppProtol as the underlying PPP protocol;
-func NewPAP(pppProto *ppp.PPP, requestID uint8) *PAP {
+func NewPAP(pppProto *ppp.PPP, requestID uint8, concurrentRetries int) *PAP {
 	r := new(PAP)
 	r.sendChan, r.recvChan = pppProto.Register(ppp.ProtoPAP)
 	logger := pppProto.Logger.With().Str("Name", "PAP").Logger()
 	r.logger = &logger
 	r.requestID = requestID
+	r.concurrentRetries = concurrentRetries
 	return r
 }
 
 func (pap *PAP) getResponse(ctx context.Context, req Packet) (resp Packet, err error) {
 	for i := 0; i < _defaultRetryNumber; i++ {
-		// Increase request ID counter
-		pap.requestID--
-		req.ID = pap.requestID
+		for i := 0; i < pap.concurrentRetries; i++ {
+			// Increase request ID counter
+			pap.requestID--
+			req.ID = pap.requestID
 
-		// Send request
-		pppData, err := ppp.NewPacket(&req, ppp.ProtoPAP).Serialize()
-		if err != nil {
-			return resp, err
+			// Send request
+			pppData, err := ppp.NewPacket(&req, ppp.ProtoPAP).Serialize()
+			if err != nil {
+				return resp, err
+			}
+
+			pap.sendChan <- pppData
+			pap.logger.Debug().Any("req", req).Msg("sent PAP auth request")
 		}
-		pap.sendChan <- pppData
-		pap.logger.Debug().Any("req", req).Msg("sent PAP auth request")
 
 		// Parse response
+		// Here I define a function to call properly the
+		// `defer cancel()` inside a loop
 		resp, err = func(resp Packet) (Packet, error) {
 			ctx, cancel := context.WithTimeout(ctx, _defaultTimeout)
 			defer cancel()

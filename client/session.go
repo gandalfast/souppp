@@ -179,16 +179,14 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 		switch authProto {
 		case ppp.ProtoCHAP:
 			chapProto := chap.NewCHAP(s.pppProto)
-			err := chapProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password)
-			if err != nil {
+			if err := chapProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password); err != nil {
 				s.cfg.Logger.Error().Err(err).Msg("auth failed")
 				_ = s.Close()
 				return
 			}
 		case ppp.ProtoPAP:
-			papProto := pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier)
-			err := papProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password)
-			if err != nil {
+			papProto := pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier, s.cfg.ConcurrentAuthRetries)
+			if err := papProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password); err != nil {
 				s.cfg.Logger.Error().Err(err).Msg("auth failed")
 				_ = s.Close()
 				return

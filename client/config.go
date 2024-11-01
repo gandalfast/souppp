@@ -53,6 +53,8 @@ type Setup struct {
 	AuthProto ppp.ProtocolNumber
 	// InitialAuthIdentifier is the starting value for the incremental authentication Identifier
 	InitialAuthIdentifier uint8
+	// ConcurrentAuthRetries specifies how many packets should be sent for a single authentication
+	ConcurrentAuthRetries int
 	// UserName for PAP/CHAP auth
 	UserName string
 	// Password for PAP/CHAP auth
@@ -113,29 +115,35 @@ func (setup *Setup) Validate() error {
 		setup.MacStep = 1
 	}
 
+	if setup.ConcurrentAuthRetries == 0 {
+		setup.ConcurrentAuthRetries = 1
+	}
+
 	return nil
 }
 
 func (setup *Setup) Clone(index int) *Setup {
 	return &Setup{
-		Logger:           setup.Logger,
-		LogLevel:         setup.LogLevel,
-		Apply:            setup.Apply,
-		Timeout:          setup.Timeout,
-		NumOfClients:     setup.NumOfClients,
-		StartMAC:         setup.StartMAC,
-		MacStep:          setup.MacStep,
-		InterfaceName:    setup.InterfaceName,
-		PPPInterfaceName: genStrFunc(setup.PPPInterfaceName, index),
-		RID:              genStrFunc(setup.RID, index),
-		CID:              genStrFunc(setup.CID, index),
-		AuthProto:        setup.AuthProto,
-		UserName:         genStrFunc(setup.UserName, index),
-		Password:         genStrFunc(setup.Password, index),
-		IPv4:             setup.IPv4,
-		IPv6:             setup.IPv6,
-		DHCPv6IANA:       setup.DHCPv6IANA,
-		DHCPv6IAPD:       setup.DHCPv6IAPD,
+		Logger:                setup.Logger,
+		LogLevel:              setup.LogLevel,
+		Apply:                 setup.Apply,
+		Timeout:               setup.Timeout,
+		NumOfClients:          setup.NumOfClients,
+		StartMAC:              setup.StartMAC,
+		MacStep:               setup.MacStep,
+		InterfaceName:         setup.InterfaceName,
+		PPPInterfaceName:      genStrFunc(setup.PPPInterfaceName, index),
+		RID:                   genStrFunc(setup.RID, index),
+		CID:                   genStrFunc(setup.CID, index),
+		AuthProto:             setup.AuthProto,
+		InitialAuthIdentifier: setup.InitialAuthIdentifier,
+		ConcurrentAuthRetries: setup.ConcurrentAuthRetries,
+		UserName:              genStrFunc(setup.UserName, index),
+		Password:              genStrFunc(setup.Password, index),
+		IPv4:                  setup.IPv4,
+		IPv6:                  setup.IPv6,
+		DHCPv6IANA:            setup.DHCPv6IANA,
+		DHCPv6IAPD:            setup.DHCPv6IAPD,
 	}
 }
 
