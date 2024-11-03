@@ -209,7 +209,7 @@ func (mn *OpMagicNum) Equal(b Option) bool {
 }
 
 // GenericOption is a general LCP/IPCP/IPv6CP option that doesn't have
-// explicit support
+// any explicit mention in PPP protocol documentation.
 type GenericOption struct {
 	Code    uint8
 	Proto   ppp.ProtocolNumber

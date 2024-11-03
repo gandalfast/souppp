@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Client represents a PPPoE/PPP sessions handler
+// Client represents a PPPoE/PPP sessions lifetime handler (aka a Pool)
 type Client struct {
 	cfg        *Setup
 	relayConn  etherconn.PacketRelay
@@ -32,18 +32,25 @@ func NewClient(relayConn etherconn.PacketRelay, cfg *Setup) (*Client, error) {
 		cfg:       cfg,
 		relayConn: relayConn,
 		sessions:  make([]*session, cfg.NumOfClients),
-		closed:    make(chan struct{}),
 		blacklist: lcp.NewDefaultBlacklist(),
+		closed:    make(chan struct{}),
 	}, nil
 }
 
+// SetBlacklist adds a custom IP blacklist to avoid the usage of
+// some specific addresses in the PPP sessions.
 func (c *Client) SetBlacklist(blacklist lcp.Blacklist) {
 	c.blacklist = blacklist
 }
 
 // Dial starts all the required initial sessions.
-// If it returns an error, the Client type can't be used anymore, and it's
-// the equivalent of a call to Close().
+// It returns an error only if all the sessions failed, and there is no
+// client running after the call to this function.
+// If at least one session handshake succeed, and there are some failed
+// sessions, the failed sessions will be restarted in another goroutine
+// asynchronously.
+// If this function returns an error, the current Client can't be used anymore,
+// and it's the equivalent of a call to Close().
 func (c *Client) Dial(ctx context.Context) error {
 	var wg sync.WaitGroup
 
@@ -84,10 +91,13 @@ func (c *Client) Dial(ctx context.Context) error {
 	return nil
 }
 
+// NumSessions returns the total number of target concurrent PPPoE sessions.
 func (c *Client) NumSessions() int {
 	return len(c.sessions)
 }
 
+// IsSessionValid returns true if the specified session at index i
+// (in the range 0 <= i < NumSessions) is currently up and ready.
 func (c *Client) IsSessionValid(index int) bool {
 	if index < 0 || index >= len(c.sessions) {
 		return false
@@ -103,6 +113,8 @@ func (c *Client) IsSessionValid(index int) bool {
 	return s.isReady.Load()
 }
 
+// GetValidSession returns a random index i (in the range 0 <= i < NumSessions) ,
+// that is currently up and ready.
 func (c *Client) GetValidSession(ctx context.Context) (int, error) {
 	length := c.NumSessions()
 	index := rand.IntN(length)
@@ -124,6 +136,10 @@ func (c *Client) GetValidSession(ctx context.Context) (int, error) {
 	}
 }
 
+// RestartSession manually restarts a PPPoE session specified at the index i
+// (in the range 0 <= i < NumSessions), and if it's successful, it returns the
+// list of old IP addresses assigned to previous session that has been
+// replaced.
 func (c *Client) RestartSession(ctx context.Context, index int) (oldIPs []net.IP, err error) {
 	if index < 0 || index >= len(c.sessions) {
 		return nil, errors.New("invalid session index")

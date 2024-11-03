@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gandalfast/souppp/auth"
 	"github.com/gandalfast/souppp/auth/chap"
 	"github.com/gandalfast/souppp/auth/pap"
 	"github.com/gandalfast/souppp/datapath"
@@ -66,8 +67,8 @@ func newSession(index int, cfg *Setup, relay etherconn.PacketRelay, blacklist lc
 	}
 
 	var tagList []pppoe.Tag
-	if cfg.CID != "" || cfg.RID != "" {
-		tagList = append(tagList, pppoe.NewCircuitRemoteIDTag(cfg.CID, cfg.RID))
+	if cfg.CircuitID != "" || cfg.RemoteID != "" {
+		tagList = append(tagList, pppoe.NewCircuitRemoteIDTag(cfg.CircuitID, cfg.RemoteID))
 	}
 
 	s.pppoeProto = pppoe.NewPPPoE(etherConn, cfg.Logger, pppoe.WithTags(tagList))
@@ -176,23 +177,14 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 
 		startingAuthTime := time.Now()
 		authProto := opauthlist[0].(*lcp.OpAuthProto).Proto
-		switch authProto {
-		case ppp.ProtoCHAP:
-			chapProto := chap.NewCHAP(s.pppProto)
-			if err := chapProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password); err != nil {
-				s.cfg.Logger.Error().Err(err).Msg("auth failed")
-				_ = s.Close()
-				return
-			}
-		case ppp.ProtoPAP:
-			papProto := pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier, s.cfg.ConcurrentAuthRetries)
-			if err := papProto.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password); err != nil {
-				s.cfg.Logger.Error().Err(err).Msg("auth failed")
-				_ = s.Close()
-				return
-			}
-		default:
-			s.cfg.Logger.Error().Msgf("unkown auth method negoatied %v", authProto)
+		authenticator, err := s.getAuthHandler(authProto)
+		if err != nil {
+			s.cfg.Logger.Error().Err(err).Msg("unable to obtain authenticator")
+			_ = s.Close()
+			return
+		}
+		if err := authenticator.AuthSelf(ctx, s.cfg.UserName, s.cfg.Password); err != nil {
+			s.cfg.Logger.Error().Err(err).Msg("auth failed")
 			_ = s.Close()
 			return
 		}
@@ -226,6 +218,17 @@ func (s *session) lcpEvtHandler(evt lcp.LayerNotifyEvent) {
 	case lcp.LayerNotifyDown, lcp.LayerNotifyFinished:
 		_ = s.Close()
 	default:
+	}
+}
+
+func (s *session) getAuthHandler(authProto ppp.ProtocolNumber) (auth.Authenticator, error) {
+	switch authProto {
+	case ppp.ProtoCHAP:
+		return chap.NewCHAP(s.pppProto), nil
+	case ppp.ProtoPAP:
+		return pap.NewPAP(s.pppProto, s.cfg.InitialAuthIdentifier, s.cfg.ConcurrentAuthRetries), nil
+	default:
+		return nil, errors.New("unkown auth method negoatied " + authProto.String())
 	}
 }
 

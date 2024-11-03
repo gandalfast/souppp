@@ -14,7 +14,7 @@ const (
 	_maximumMacAddr = (1 << (_macMaxBytes * 8)) - 1
 )
 
-// incrementMACAddress increment macaddr by step value (can be negative and return the result
+// incrementMACAddress increment MAC address value by step value (can be negative), and return the result
 func incrementMACAddress(macaddr net.HardwareAddr, step int64) (net.HardwareAddr, error) {
 	length := len(macaddr)
 	if length > _macMaxBytes {

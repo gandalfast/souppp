@@ -15,7 +15,7 @@ import (
 	"net"
 )
 
-// TUNInterface is the TUN interface for a opened PPP session
+// TUNInterface is the TUN interface for an opened PPP session.
 type TUNInterface struct {
 	logger                 *zerolog.Logger
 	pppProto               *ppp.PPP
@@ -103,7 +103,7 @@ func (tif *TUNInterface) Close() error {
 	return tif.netInterface.Close()
 }
 
-// send pkt to outside network
+// send sends PPP packet to outside network
 func (tif *TUNInterface) send(ctx context.Context) {
 	for {
 		// Read IPv4 / IPv6 packet to send from TUN interface

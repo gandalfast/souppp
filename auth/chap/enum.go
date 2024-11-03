@@ -2,10 +2,9 @@ package chap
 
 import "fmt"
 
-// Code is the code of CHAP msg
 type Code uint8
 
-// List of CHAPCode
+// List of CHAP codes
 const (
 	CodeChallenge Code = 1
 	CodeResponse  Code = 2
@@ -13,7 +12,6 @@ const (
 	CodeFailure   Code = 4
 )
 
-// String returns a string representation of c
 func (c Code) String() string {
 	switch c {
 	case CodeChallenge:

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// _varName is the placeholder in PPP IfName that will be replaced by client id
+// _varName is the placeholder in PPP IfName that will be replaced by client ID.
 const _varName = "@ID"
 
 func genStrFunc(s string, id int) string {
@@ -22,10 +22,10 @@ func genStrFunc(s string, id int) string {
 	return strings.ReplaceAll(s, _varName, strconv.Itoa(id))
 }
 
-// _defaultPPPIfNameTemplate is the default PPP interface name
+// _defaultPPPIfNameTemplate is the default PPP interface name.
 const _defaultPPPIfNameTemplate = "souppp@ID"
 
-// Setup holds common configuration for creating one or multiple Client sessions
+// Setup holds configuration for creating PPPoE sessions.
 type Setup struct {
 	Logger   *zerolog.Logger
 	LogLevel LoggingLvl
@@ -45,10 +45,10 @@ type Setup struct {
 	InterfaceName string
 	// Name of PPP interface created after successfully dialing, must contain @ID
 	PPPInterfaceName string
-	// RID is the BBF remote-id PPPoE tag
-	RID string
-	// CID is the BBF circuit-id PPPoE tag
-	CID string
+	// RemoteID is the BBF remote-id PPPoE tag
+	RemoteID string
+	// CircuitID is the BBF circuit-id PPPoE tag
+	CircuitID string
 	// AuthProto is the authentication protocol to use, e.g. lcp.ProtoCHAP or lcp.ProtoPAP
 	AuthProto ppp.ProtocolNumber
 	// InitialAuthIdentifier is the starting value for the incremental authentication Identifier
@@ -69,7 +69,7 @@ type Setup struct {
 }
 
 // DefaultSetup returns a basic default Setup with following defaults:
-// - no vlan, use the mac of interface ifname
+// - no vlan, use the MAC address of InterfaceName
 // - no debug mode
 // - 10 seconds dial timeout
 // - single client
@@ -86,6 +86,8 @@ func DefaultSetup() *Setup {
 	}
 }
 
+// Validate checks the validity of current configuration and adds missing
+// fields value when they have adeguate default values.
 func (setup *Setup) Validate() error {
 	if setup.Logger == nil {
 		logger, err := newDefaultLogger(setup.LogLevel)
@@ -122,6 +124,8 @@ func (setup *Setup) Validate() error {
 	return nil
 }
 
+// Clone creates a deep copy of the configuration, preparing it
+// for a new session at the target index position.
 func (setup *Setup) Clone(index int) *Setup {
 	return &Setup{
 		Logger:                setup.Logger,
@@ -133,8 +137,8 @@ func (setup *Setup) Clone(index int) *Setup {
 		MacStep:               setup.MacStep,
 		InterfaceName:         setup.InterfaceName,
 		PPPInterfaceName:      genStrFunc(setup.PPPInterfaceName, index),
-		RID:                   genStrFunc(setup.RID, index),
-		CID:                   genStrFunc(setup.CID, index),
+		RemoteID:              genStrFunc(setup.RemoteID, index),
+		CircuitID:             genStrFunc(setup.CircuitID, index),
 		AuthProto:             setup.AuthProto,
 		InitialAuthIdentifier: setup.InitialAuthIdentifier,
 		ConcurrentAuthRetries: setup.ConcurrentAuthRetries,
@@ -147,19 +151,19 @@ func (setup *Setup) Clone(index int) *Setup {
 	}
 }
 
-// LoggingLvl is the logging level of client
+// LoggingLvl is the logging level of client.
 type LoggingLvl uint
 
 const (
-	// LogLvlErr only log error msg
+	// LogLvlErr only log Error messages
 	LogLvlErr LoggingLvl = iota
-	// LogLvlInfo logs error + info msg
+	// LogLvlInfo logs Error + Info messages
 	LogLvlInfo
-	// LogLvlDebug logs error + info + debug msg
+	// LogLvlDebug logs Error + Info + Debug messages
 	LogLvlDebug
 )
 
-// newDefaultLogger create a default Logger with specified log level
+// newDefaultLogger create a default Logger with specified log level.
 func newDefaultLogger(logl LoggingLvl) (*zerolog.Logger, error) {
 	logger := zerolog.New(os.Stdout).Level(logLvlToZapLvl(logl))
 	return &logger, nil

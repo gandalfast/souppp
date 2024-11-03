@@ -11,7 +11,7 @@ import (
 
 const _defaultTimeout = 10 * time.Second
 
-// CHAP is the CHAP protocol implementation
+// CHAP is the CHAP authentication implementation
 type CHAP struct {
 	logger   *zerolog.Logger
 	sendChan chan []byte

@@ -12,14 +12,14 @@ import (
 	"time"
 )
 
-// DHCP6Cfg holds configuration for DHCP6Clnterface
+// DHCP6Cfg holds configuration for DHCPv6.
 type DHCP6Cfg struct {
 	Mac            net.HardwareAddr
 	NeedPD, NeedNA bool
 	Debug          bool
 }
 
-// DHCP6Clnterface is a DHCPv6 client
+// DHCP6Clnterface is a DHCPv6 client.
 type DHCP6Clnterface struct {
 	client        *nclient6.Client
 	cfg           DHCP6Cfg
@@ -46,7 +46,7 @@ func NewDHCP6Clnt(conn net.PacketConn, cfg DHCP6Cfg) (*DHCP6Clnterface, error) {
 	}, nil
 }
 
-// Dial completes a DHCPv6 exchange with server
+// Dial completes a DHCPv6 exchange.
 func (dc *DHCP6Clnterface) Dial(ctx context.Context) error {
 	solicitMsg, err := dc.buildSolicit()
 	if err != nil {

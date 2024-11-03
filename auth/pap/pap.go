@@ -14,7 +14,7 @@ const (
 	_defaultRetryNumber = 3
 )
 
-// PAP is the PAP protocol implementation
+// PAP is the PAP authentication implementation
 type PAP struct {
 	logger            *zerolog.Logger
 	sendChan          chan []byte

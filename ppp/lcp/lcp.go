@@ -230,7 +230,7 @@ func (lcp *LCP) Start(ctx context.Context) {
 		}()
 	}
 
-	// Timer handler
+	// Timer handler (triggered if AC didn't respond to a request packet)
 	go func() {
 		select {
 		case <-lcp.restartTimer.C:

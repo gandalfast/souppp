@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// PPPoE represents the PPPoE protocol
+// PPPoE represents the PPPoE protocol.
 type PPPoE struct {
 	logger *zerolog.Logger
 	conn   *etherconn.EtherConn
@@ -33,10 +33,10 @@ const (
 	_defaultRetryPPPoE   = 3
 )
 
-// Modifier is a function to provide custom configuration when creating new PPPoE instances
+// Modifier is a function to provide custom configuration when creating new PPPoE instances.
 type Modifier func(pppoe *PPPoE)
 
-// WithTags adds all tags in t in PPPoE request pkt
+// WithTags adds all tags in t in PPPoE request packets.
 func WithTags(t []Tag) Modifier {
 	return func(pppoe *PPPoE) {
 		if len(t) == 0 {
@@ -46,6 +46,7 @@ func WithTags(t []Tag) Modifier {
 	}
 }
 
+// WithServiceName specifies a custom service name in the PPPoE options.
 func WithServiceName(serviceName string) Modifier {
 	return func(pppoe *PPPoE) {
 		pppoe.serviceName = serviceName
@@ -71,17 +72,14 @@ func NewPPPoE(conn *etherconn.EtherConn, logger *zerolog.Logger, options ...Modi
 	return r
 }
 
-// SetReadDeadline implements net.PacketConn interface
 func (pppoe *PPPoE) SetReadDeadline(t time.Time) error {
 	return pppoe.conn.SetReadDeadline(t)
 }
 
-// SetWriteDeadline implements net.PacketConn interface
 func (pppoe *PPPoE) SetWriteDeadline(t time.Time) error {
 	return pppoe.conn.SetWriteDeadline(t)
 }
 
-// SetDeadline implements net.PacketConn interface
 func (pppoe *PPPoE) SetDeadline(t time.Time) error {
 	var errList []error
 	errList = append(errList, pppoe.SetReadDeadline(t))
@@ -89,7 +87,6 @@ func (pppoe *PPPoE) SetDeadline(t time.Time) error {
 	return errors.Join(errList...)
 }
 
-// LocalAddr return local Endpoint, see doc of Endpoint
 func (pppoe *PPPoE) LocalAddr() net.Addr {
 	return &Endpoint{
 		L2EP:      pppoe.conn.LocalAddr().(*etherconn.L2Endpoint).HwAddr,
@@ -97,7 +94,7 @@ func (pppoe *PPPoE) LocalAddr() net.Addr {
 	}
 }
 
-// Dial complets a full PPPoE discovery exchange (PADI/PADO/PADR/PADS)
+// Dial completes a full PPPoE discovery exchange (PADI/PADO/PADR/PADS).
 func (pppoe *PPPoE) Dial(ctx context.Context) (err error) {
 	if atomic.LoadUint32(&pppoe.state) != pppoeStateInitial {
 		return errors.New("pppoe is not in initial state")
@@ -148,8 +145,7 @@ func (pppoe *PPPoE) Dial(ctx context.Context) (err error) {
 	return nil
 }
 
-// WriteTo implements net.PacketConn interface.
-// addr is ignored, pkt is always sent to AC's MAC.
+// WriteTo sends the packet serialized bytes to Access Concentrator's MAC.
 func (pppoe *PPPoE) WriteTo(p []byte, _ net.Addr) (n int, err error) {
 	pkt := &Packet{
 		Code:      CodeSession,
@@ -168,6 +164,7 @@ func (pppoe *PPPoE) WriteTo(p []byte, _ net.Addr) (n int, err error) {
 }
 
 // ReadFrom only works after PPPoE session is open.
+// It reads packet data into buf and return the number of written bytes.
 func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 	for {
 		n, l2ep, err := pppoe.conn.ReadPacketFrom(buf)
@@ -199,7 +196,6 @@ func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 	}
 }
 
-// Close implements net.PacketConn interface
 func (pppoe *PPPoE) Close() error {
 	if atomic.LoadUint32(&pppoe.state) == pppoeStateOpen {
 		pkt := pppoe.buildPADT()
@@ -238,7 +234,7 @@ func (pppoe *PPPoE) buildPADT() *Packet {
 	}
 }
 
-// exchangePacket returns the first received PPPoE response with the specified code, along with the remote MAC address
+// exchangePacket returns the first received PPPoE response with the specified code, along with the remote MAC address.
 func (pppoe *PPPoE) exchangePacket(ctx context.Context, req Packet, code Code, dst net.HardwareAddr) (resp Packet, hwAddr net.HardwareAddr, err error) {
 	pktbytes, err := req.Serialize()
 	if err != nil {
@@ -279,7 +275,7 @@ func (pppoe *PPPoE) exchangePacket(ctx context.Context, req Packet, code Code, d
 	return resp, nil, fmt.Errorf("failed to receive expect response %v", code)
 }
 
-// Endpoint represents a PPPoE endpont
+// Endpoint represents a PPPoE endpoint.
 type Endpoint struct {
 	// L2 Endpoint
 	L2EP net.HardwareAddr
@@ -287,12 +283,12 @@ type Endpoint struct {
 	SessionID uint16
 }
 
-// Network implenets net.Addr interface, always return "pppoe"
+// Network implements net.Addr interface, always returns "pppoe"
 func (pep Endpoint) Network() string {
 	return "pppoe"
 }
 
-// String implenets net.Addr interface, return "pppoe:<L2EP>:<SessionID>"
+// String implements net.Addr interface, returns "pppoe:<L2EP>:<SessionID>"
 func (pep Endpoint) String() string {
 	return fmt.Sprintf("pppoe:%v:%x", pep.L2EP.String(), pep.SessionID)
 }

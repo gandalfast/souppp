@@ -17,10 +17,9 @@ const (
 	pppoeStateClosed
 )
 
-// Code is PPPoE msg code
 type Code uint8
 
-// List of PPPoE msg codes
+// List of PPPoE codes
 const (
 	CodeSession Code = 0x00
 	CodePADO    Code = 0x07

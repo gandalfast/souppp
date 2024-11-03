@@ -13,23 +13,23 @@ const _pppoeVersionType byte = 0x11
 
 // Packet represents a PPPoE packet
 type Packet struct {
-	Vertype   byte
-	Code      Code
-	SessionID uint16
-	Len       uint16
-	Payload   []byte
-	Tags      []Tag
+	VersionType byte
+	Code        Code
+	SessionID   uint16
+	Len         uint16
+	Payload     []byte
+	Tags        []Tag
 }
 
-// Parse buf into pkt
+// Parse bytes into packet
 func (pkt *Packet) Parse(buf []byte) error {
 	if len(buf) < 6 {
 		return fmt.Errorf("invalid PPPoE packet length %d", len(buf))
 	}
 
-	pkt.Vertype = buf[0]
-	if pkt.Vertype != _pppoeVersionType {
-		return fmt.Errorf("invalid PPPoE version type, should be 0x11, got 0x%X ", pkt.Vertype)
+	pkt.VersionType = buf[0]
+	if pkt.VersionType != _pppoeVersionType {
+		return fmt.Errorf("invalid PPPoE version type, should be 0x11, got 0x%X ", pkt.VersionType)
 	}
 	pkt.Code = Code(buf[1])
 	pkt.SessionID = binary.BigEndian.Uint16(buf[2:4])
@@ -64,7 +64,7 @@ func (pkt *Packet) Parse(buf []byte) error {
 	return nil
 }
 
-// Serialize pkt into bytes, without copying, and no padding
+// Serialize packet into bytes
 func (pkt *Packet) Serialize() ([]byte, error) {
 	payload := pkt.Payload
 

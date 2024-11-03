@@ -2,17 +2,15 @@ package pap
 
 import "fmt"
 
-// Code is the PAP msg code
 type Code uint8
 
-// A list of PAP msg code
+// List of PAP codes
 const (
 	CodeAuthRequest Code = 1
 	CodeAuthACK     Code = 2
 	CodeAuthNAK     Code = 3
 )
 
-// String return a string representation of c
 func (c Code) String() string {
 	switch c {
 	case CodeAuthRequest:

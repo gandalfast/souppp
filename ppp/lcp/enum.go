@@ -2,10 +2,9 @@ package lcp
 
 import "fmt"
 
-// MsgCode is the LCP message Code
 type MsgCode uint8
 
-// LCP message codes
+// List of LCP message codes
 const (
 	CodeConfigureRequest MsgCode = 0x01
 	CodeConfigureAck     MsgCode = 0x02
@@ -49,10 +48,9 @@ func (code MsgCode) String() string {
 	}
 }
 
-// OptionType is the LCP option type
 type OptionType uint8
 
-// LCP option types
+// List of LCP option types
 const (
 	OpTypeMaximumReceiveUnit                OptionType = 0x01
 	OpTypeAuthenticationProtocol            OptionType = 0x03
@@ -81,10 +79,10 @@ func (op OptionType) String() string {
 	}
 }
 
-// State is the LCP protocol state
+// State is the current LCP protocol state
 type State uint32
 
-// LCP protocol state as defined in RFC1661
+// LCP protocol state (as defined in RFC1661)
 const (
 	StateInitial State = iota
 	StateStarting
@@ -163,10 +161,10 @@ func (alg CHAPAuthAlg) String() string {
 	}
 }
 
-// LayerNotifyEvent is the tlu/tld/tls/tlf event defined in RFC1661
+// LayerNotifyEvent is the tlu/tld/tls/tlf event (as defined in RFC1661)
 type LayerNotifyEvent uint8
 
-// List of LayerNotifyEvent
+// List of LayerNotifyEvent statuses
 const (
 	LayerNotifyUp LayerNotifyEvent = iota
 	LayerNotifyDown
@@ -189,10 +187,9 @@ func (n LayerNotifyEvent) String() string {
 	}
 }
 
-// IPCPOptionType is the option type for IPCP
 type IPCPOptionType uint8
 
-// List of IPCP option type
+// List of IPCP option types
 const (
 	OpIPAddresses                IPCPOptionType = 0x01
 	OpIPCompressionProtocol      IPCPOptionType = 0x02
@@ -227,10 +224,9 @@ func (o IPCPOptionType) String() string {
 	}
 }
 
-// IPCP6OptionType is the option type for IPv6CP
 type IPCP6OptionType uint8
 
-// List of IPv6CP option type
+// List of IPv6CP option types
 const (
 	IP6CPOpInterfaceIdentifier     IPCP6OptionType = 0x01
 	IP6CPOpIPv6CompressionProtocol IPCP6OptionType = 0x02
