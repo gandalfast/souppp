@@ -147,13 +147,18 @@ func (c *Client) RestartSession(ctx context.Context, index int) (oldIPs []net.IP
 
 	c.sessionMtx.Lock()
 	s := c.sessions[index]
-	if s != nil && s.isReady.Load() {
-		s.isReady.Store(false)
+	var swapped bool
+	if s != nil {
+		swapped = s.isReady.CompareAndSwap(true, false)
 	}
 	c.sessionMtx.Unlock()
 
 	if s == nil {
 		return nil, errors.New("session is not started")
+	}
+
+	if !swapped {
+		return nil, errors.New("session is already dialing")
 	}
 
 	oldIPs = append(s.assignedIANAs, s.assignedV4Addr)
@@ -183,6 +188,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) dialSessionLoop(ctx context.Context, index int) error {
+	ctx = context.WithoutCancel(ctx)
 	duration := c.cfg.Timeout * 3 / 2
 	t := time.NewTimer(duration)
 	for {
