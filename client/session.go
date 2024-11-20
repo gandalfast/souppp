@@ -124,6 +124,8 @@ func (s *session) Dial(ctx context.Context) error {
 				err := s.createDataPath(ctx)
 				if err != nil {
 					_ = s.Close()
+				} else {
+					s.isReady.Store(true)
 				}
 				return err
 			}
