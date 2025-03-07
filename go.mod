@@ -4,13 +4,13 @@ go 1.23
 
 require (
 	github.com/asavie/xdp v0.3.4-0.20240826152323-67e5ba17320c
-	github.com/cilium/ebpf v0.17.2
+	github.com/cilium/ebpf v0.17.3
 	github.com/insomniacslk/dhcp v0.0.0-20240829085014-a3a4c1f04475
 	github.com/rs/zerolog v1.33.0
 	github.com/safchain/ethtool v0.5.10
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
-	golang.org/x/sys v0.29.0
+	golang.org/x/sys v0.30.0
 )
 
 require (
