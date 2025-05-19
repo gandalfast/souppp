@@ -1,6 +1,7 @@
 module github.com/gandalfast/souppp
 
-go 1.23
+go 1.23.0
+
 toolchain go1.24.1
 
 require (
@@ -10,7 +11,7 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/safchain/ethtool v0.5.10
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
-	github.com/vishvananda/netlink v1.3.0
+	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/sys v0.31.0
 )
 
