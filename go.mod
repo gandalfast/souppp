@@ -7,7 +7,7 @@ require (
 	github.com/cilium/ebpf v0.18.0
 	github.com/insomniacslk/dhcp v0.0.0-20240829085014-a3a4c1f04475
 	github.com/rs/zerolog v1.34.0
-	github.com/safchain/ethtool v0.6.0
+	github.com/safchain/ethtool v0.6.1
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/sys v0.33.0
