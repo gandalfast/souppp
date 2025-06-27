@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/asavie/xdp v0.3.4-0.20240826152323-67e5ba17320c
-	github.com/cilium/ebpf v0.18.0
+	github.com/cilium/ebpf v0.19.0
 	github.com/insomniacslk/dhcp v0.0.0-20240829085014-a3a4c1f04475
 	github.com/rs/zerolog v1.34.0
 	github.com/safchain/ethtool v0.6.0
