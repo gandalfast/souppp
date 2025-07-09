@@ -15,7 +15,7 @@ souppp is a library that fully implements PPPoE (and related protocols) in Go:
 ## PPPoE Client
 
 ### Features
-- Fast Ethernet network communication via eBPF/XDP, which allows the client to bypass the Linux network stack and improve performance
+- Fast Ethernet network communication via eBPF/XDP, which allows the client to bypass the Linux network stack and improve performance: eBPF program is based on [EtherconnKern project](https://github.com/gandalfast/etherconnkern)
 - Option to specify a custom MAC address (reading response frames thanks to network card promiscous mode)
 - Option to run multiple PPPoE sessions concurrently, with functions to handle and replace them
 - Support IPv4, IPv6 (DHCPv6 over PPP, IA_NA and/or IA_PD) and dual stack
