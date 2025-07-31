@@ -158,18 +158,18 @@ func (s *xdpSock) send(mode xdpSendingMode) {
 			continue
 		}
 
-		descriptions := s.sock.GetDescs(sentPackets, false)
-		if len(descriptions) < sentPackets {
-			s.logger.Debug().Msgf("unable to get xdp desc, need %d, but got %d", sentPackets, len(descriptions))
+		descriptors := s.sock.GetDescs(sentPackets, false)
+		if len(descriptors) < sentPackets {
+			s.logger.Debug().Msgf("unable to get xdp desc, need %d, but got %d", sentPackets, len(descriptors))
 			return
 		}
 
 		for i := 0; i < sentPackets; i++ {
-			copy(s.sock.GetFrame(descriptions[i]), dataList[i])
-			descriptions[i].Len = uint32(len(dataList[i]))
+			copy(s.sock.GetFrame(descriptors[i]), dataList[i])
+			descriptors[i].Len = uint32(len(dataList[i]))
 		}
 
-		numSubmitted := s.sock.Transmit(descriptions)
+		numSubmitted := s.sock.Transmit(descriptors)
 		if numSubmitted != sentPackets {
 			s.logger.Debug().Msgf("failed to submit pkt to xdp tx ring, need to send %d, only sent %d", sentPackets, numSubmitted)
 			return
@@ -230,9 +230,9 @@ func (s *xdpSock) receive() {
 				continue
 			}
 
-			rxDescriptions := s.sock.Receive(numRx)
-			for i := 0; i < len(rxDescriptions); i++ {
-				packetData := slices.Clone(s.sock.GetFrame(rxDescriptions[i]))
+			rxDescriptors := s.sock.Receive(numRx)
+			for i := 0; i < len(rxDescriptors); i++ {
+				packetData := slices.Clone(s.sock.GetFrame(rxDescriptors[i]))
 				s.handleReceivedPacket(packetData)
 			}
 		}
