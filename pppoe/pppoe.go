@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ethernetconn"
 	"github.com/rs/zerolog"
 	"net"
 	"sync/atomic"
@@ -16,7 +16,7 @@ import (
 // PPPoE represents the PPPoE protocol.
 type PPPoE struct {
 	logger *zerolog.Logger
-	conn   *etherconn.EtherConn
+	conn   *ethernetconn.EtherConn
 	state  uint32
 
 	// Configurable parameters
@@ -55,7 +55,7 @@ func WithServiceName(serviceName string) Modifier {
 
 // NewPPPoE return a new PPPoE struct; use conn as underlying transport, logger for logging;
 // optionally Modifer could provide custom configurations;
-func NewPPPoE(conn *etherconn.EtherConn, logger *zerolog.Logger, options ...Modifier) *PPPoE {
+func NewPPPoE(conn *ethernetconn.EtherConn, logger *zerolog.Logger, options ...Modifier) *PPPoE {
 	r := new(PPPoE)
 	for _, option := range options {
 		option(r)
@@ -89,7 +89,7 @@ func (pppoe *PPPoE) SetDeadline(t time.Time) error {
 
 func (pppoe *PPPoE) LocalAddr() net.Addr {
 	return &Endpoint{
-		L2EP:      pppoe.conn.LocalAddr().(*etherconn.L2Endpoint).HwAddr,
+		L2EP:      pppoe.conn.LocalAddr().(*ethernetconn.L2Endpoint).HwAddr,
 		SessionID: pppoe.sessionID,
 	}
 }
@@ -114,7 +114,7 @@ func (pppoe *PPPoE) Dial(ctx context.Context) (err error) {
 		ctx,
 		pppoe.buildPADI(),
 		CodePADO,
-		etherconn.BroadCastMAC,
+		ethernetconn.BroadCastMAC,
 	)
 	if err != nil {
 		return err
@@ -257,7 +257,7 @@ func (pppoe *PPPoE) exchangePacket(ctx context.Context, req Packet, code Code, d
 		_ = pppoe.conn.SetReadDeadline(timeout)
 
 		receivedPacketBuf, l2ep, err := pppoe.conn.ReadPacket()
-		if err != nil && errors.Is(err, etherconn.ErrTimeOut) {
+		if err != nil && errors.Is(err, ethernetconn.ErrTimeOut) {
 			continue
 		} else if err != nil {
 			return resp, nil, fmt.Errorf("failed to receive response, %w", err)

@@ -1,4 +1,4 @@
-package etherconn
+package ethernetconn
 
 import (
 	"context"
@@ -27,7 +27,7 @@ type EtherConn struct {
 	relay               PacketRelay
 	relayRegistrationID int
 	sendChan            chan []byte
-	recvChan            chan *EthernetResponse
+	recvChan            chan []byte
 	closedChan          chan struct{}
 
 	// Deadlines
@@ -195,10 +195,8 @@ func (ec *EtherConn) getReceivedData() (*EthernetResponse, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ErrTimeOut
-	case received = <-ec.recvChan:
-		if received == nil {
-			return nil, errors.New("failed to read from relay")
-		}
+	case receivedData := <-ec.recvChan:
+		received = parseReceivedData(receivedData)
 	}
 	return received, nil
 }

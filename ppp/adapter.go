@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ethernetconn"
 	"net"
 	"sync"
 	"time"
@@ -16,7 +16,7 @@ type ConnAdapter struct {
 	ppp               *PPP
 	proto             ProtocolNumber
 	send, recv        chan []byte
-	recvList          map[etherconn.L4HashKey]chan *etherconn.EthernetResponse
+	recvList          map[ethernetconn.L4HashKey]chan *ethernetconn.EthernetResponse
 	recvListMtx       sync.RWMutex
 	writeDeadline     time.Time
 	writeDeadlineLock sync.RWMutex
@@ -29,7 +29,7 @@ func NewConnAdapter(ppp *PPP, proto ProtocolNumber) *ConnAdapter {
 	r.ppp = ppp // PPP session must be already started with Start()
 	r.proto = proto
 	r.send, r.recv = ppp.Register(proto)
-	r.recvList = make(map[etherconn.L4HashKey]chan *etherconn.EthernetResponse)
+	r.recvList = make(map[ethernetconn.L4HashKey]chan *ethernetconn.EthernetResponse)
 	return r
 }
 
@@ -37,8 +37,8 @@ func (c *ConnAdapter) Start(ctx context.Context) {
 	go c.receiveHandling()
 }
 
-func (c *ConnAdapter) Register(k etherconn.L4HashKey) (torecvch chan *etherconn.EthernetResponse) {
-	ch := make(chan *etherconn.EthernetResponse, _defaultPerClntRecvChanDepth)
+func (c *ConnAdapter) Register(k ethernetconn.L4HashKey) (torecvch chan *ethernetconn.EthernetResponse) {
+	ch := make(chan *ethernetconn.EthernetResponse, _defaultPerClntRecvChanDepth)
 	c.recvListMtx.Lock()
 	if old, ok := c.recvList[k]; ok {
 		close(old)
@@ -48,7 +48,7 @@ func (c *ConnAdapter) Register(k etherconn.L4HashKey) (torecvch chan *etherconn.
 	return ch
 }
 
-func (c *ConnAdapter) Unregister(k etherconn.L4HashKey) {
+func (c *ConnAdapter) Unregister(k ethernetconn.L4HashKey) {
 	c.recvListMtx.Lock()
 	if old, ok := c.recvList[k]; ok {
 		close(old)
@@ -86,7 +86,7 @@ func (c *ConnAdapter) WriteIPPktTo(p []byte, _ net.HardwareAddr) (int, error) {
 
 	select {
 	case <-ctx.Done():
-		return 0, etherconn.ErrTimeOut
+		return 0, ethernetconn.ErrTimeOut
 	case c.send <- buf:
 		return len(p), nil
 	}
@@ -125,7 +125,7 @@ func (c *ConnAdapter) receiveHandling() {
 				continue
 			}
 
-			ch, ok := c.recvList[etherconn.NewL4HashKeyWithEthernet(received)]
+			ch, ok := c.recvList[ethernetconn.NewL4HashKeyWithEthernet(received)]
 			if !ok {
 				continue
 			}
@@ -145,12 +145,12 @@ func (c *ConnAdapter) receiveHandling() {
 	}
 }
 
-func parsePacketIP(pkt []byte) (*etherconn.EthernetResponse, error) {
+func parsePacketIP(pkt []byte) (*ethernetconn.EthernetResponse, error) {
 	if len(pkt) < MinimumFrameSize {
 		return nil, fmt.Errorf("pkt smaller than 20 bytes")
 	}
 
-	rcv := &etherconn.EthernetResponse{
+	rcv := &ethernetconn.EthernetResponse{
 		EtherPayloadBytes: pkt,
 	}
 

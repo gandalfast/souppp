@@ -4,7 +4,7 @@ package client
 import (
 	"context"
 	"errors"
-	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ethernetconn"
 	"github.com/gandalfast/souppp/ppp/lcp"
 	"math/rand/v2"
 	"net"
@@ -15,7 +15,7 @@ import (
 // Client represents a PPPoE/PPP sessions lifetime handler (aka a Pool)
 type Client struct {
 	cfg        *Setup
-	relayConn  etherconn.PacketRelay
+	relayConn  ethernetconn.PacketRelay
 	sessionMtx sync.RWMutex
 	sessions   []*session
 	blacklist  lcp.Blacklist
@@ -23,7 +23,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client instance
-func NewClient(relayConn etherconn.PacketRelay, cfg *Setup) (*Client, error) {
+func NewClient(relayConn ethernetconn.PacketRelay, cfg *Setup) (*Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
