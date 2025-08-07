@@ -217,12 +217,29 @@ func (s *xdpSock) handleReceivedPacket(framesData []byte) {
 	s.logger.Debug().Msgf("got pkt with l2epkey %s", routingKey.String())
 
 	s.relay.listMtx.RLock()
-	received, ok := s.relay.rxList[routingKey]
+	unicastReceiver, ok := s.relay.rxList[routingKey]
 	s.relay.listMtx.RUnlock()
 
 	if ok {
-		s.sendDataToChan(framesData, received.ch)
+		s.sendDataToChan(framesData, unicastReceiver.ch)
 		return
+	}
+
+	// multicast traffic
+	if localAddress.HwAddr[0]&0x1 == 1 {
+		var multicastList []chan []byte
+		s.relay.listMtx.RLock()
+		for _, receiver := range s.relay.multicastList {
+			multicastList = append(multicastList, receiver.ch)
+		}
+		s.relay.listMtx.RUnlock()
+
+		for _, multicastChan := range multicastList {
+			s.sendDataToChan(framesData, multicastChan)
+		}
+		if len(multicastList) == 0 {
+			s.logger.Debug().Msg("ignored a multicast packet")
+		}
 	} else {
 		// unicast, receiver not found
 		s.logger.Debug().Msgf("can't find matching l2ep %s", routingKey.String())
