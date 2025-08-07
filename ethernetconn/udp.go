@@ -1,4 +1,4 @@
-package etherconn
+package ethernetconn
 
 import (
 	"encoding/binary"

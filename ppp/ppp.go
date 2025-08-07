@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ethernetconn"
 	"github.com/rs/zerolog"
 	"net"
 	"sync"
@@ -109,7 +109,7 @@ func (ppp *PPP) send() {
 				return
 			}
 			_, err := ppp.conn.WriteTo(b, nil)
-			if err != nil && !errors.Is(err, etherconn.ErrTimeOut) {
+			if err != nil && !errors.Is(err, ethernetconn.ErrTimeOut) {
 				ppp.Logger.Info().Msg("PPP send routine stopped")
 				ppp.Logger.Warn().Err(err).Msg("failed to send packet")
 				return
@@ -135,7 +135,7 @@ func (ppp *PPP) receive() {
 		_ = ppp.conn.SetReadDeadline(time.Now().Add(_readTimeout))
 		n, _, err := ppp.conn.ReadFrom(buf)
 
-		if err != nil && !errors.Is(err, etherconn.ErrTimeOut) {
+		if err != nil && !errors.Is(err, ethernetconn.ErrTimeOut) {
 			// Close the routine if there is an unrecoverable error
 			ppp.Logger.Error().Err(err).Msg("failed to receive packet")
 			return

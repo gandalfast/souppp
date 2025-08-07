@@ -8,7 +8,7 @@ import (
 	"github.com/gandalfast/souppp/auth/chap"
 	"github.com/gandalfast/souppp/auth/pap"
 	"github.com/gandalfast/souppp/datapath"
-	"github.com/gandalfast/souppp/etherconn"
+	"github.com/gandalfast/souppp/ethernetconn"
 	"github.com/gandalfast/souppp/ppp"
 	"github.com/gandalfast/souppp/ppp/lcp"
 	"github.com/gandalfast/souppp/pppoe"
@@ -25,7 +25,7 @@ type session struct {
 	cfg         *Setup
 	dialChan    chan int8
 	osInterface *datapath.TUNInterface
-	etherConn   *etherconn.EtherConn
+	etherConn   *ethernetconn.EtherConn
 	pppoeProto  *pppoe.PPPoE
 	pppProto    *ppp.PPP
 	lcpProto    *lcp.LCP
@@ -38,7 +38,7 @@ type session struct {
 	assignedIAPDs []*net.IPNet
 }
 
-func newSession(index int, cfg *Setup, relay etherconn.PacketRelay, blacklist lcp.Blacklist) (*session, error) {
+func newSession(index int, cfg *Setup, relay ethernetconn.PacketRelay, blacklist lcp.Blacklist) (*session, error) {
 	mac := cfg.StartMAC
 	if index > 0 {
 		var err error
@@ -48,11 +48,11 @@ func newSession(index int, cfg *Setup, relay etherconn.PacketRelay, blacklist lc
 		}
 	}
 
-	etherConn := etherconn.NewEtherConn(
+	etherConn := ethernetconn.NewEtherConn(
 		mac,
 		relay,
 		[]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession},
-		etherconn.WithReceiveMulticast(true),
+		ethernetconn.WithReceiveMulticast(true),
 	)
 
 	cfg = cfg.Clone(index)
@@ -308,7 +308,7 @@ func (s *session) dialDHCPv6(ctx context.Context) error {
 		return err
 	}
 
-	rudpconn, err := etherconn.NewSharingRUDPConn(localAddress, econn)
+	rudpconn, err := ethernetconn.NewSharingRUDPConn(localAddress, econn)
 	if err != nil {
 		s.cfg.Logger.Error().Err(err).Msg("failed to create SharedRUDPConn")
 		return err

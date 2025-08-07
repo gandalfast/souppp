@@ -1,4 +1,4 @@
-package etherconn
+package ethernetconn
 
 import (
 	"encoding/binary"
@@ -97,11 +97,76 @@ type PacketRelay interface {
 	// stop is a channel that will be closed when PacketRelay stops sending;
 	// if multicastSupport is true, then multicast ethernet traffic will be received as well;
 	// if one of key is already registered, then existing key will be overridden;
-	Register(ks []L2EndpointKey, multicast bool) (recv chan *EthernetResponse, send chan []byte, stop chan struct{}, registrationID int)
+	Register(ks []L2EndpointKey, multicast bool) (receiveChan, sendChan chan []byte, stop chan struct{}, registrationID int)
 	// Unregister removes L2EndpointKey from registration
 	Unregister(registrationID int)
 	// Close stops the forwarding of Ethernet packets
 	Close() error
-	// InterfaceName returns binding interface name
-	InterfaceName() string
+}
+
+// parseReceivedData parse received ethernet pkt, p is a ethernet packet in byte slice,
+func parseReceivedData(p []byte) *EthernetResponse {
+	rcv := &EthernetResponse{
+		EtherBytes: p,
+		LocalEndpoint: &L2Endpoint{
+			HwAddr: make([]byte, 6),
+		},
+		RemoteEndpoint: &L2Endpoint{
+			HwAddr: make([]byte, 6),
+		},
+	}
+
+	copy(rcv.LocalEndpoint.HwAddr, p[:6])    // dst mac
+	copy(rcv.RemoteEndpoint.HwAddr, p[6:12]) // src mac
+
+	index := 12
+	for {
+		ethernetType := binary.BigEndian.Uint16(p[index : index+2])
+		// 0x88A8: Service VLAN tag
+		// 8x8100: 802.11q (VLAN)
+		if ethernetType != 0x8100 && ethernetType != 0x88a8 {
+			rcv.LocalEndpoint.EthernetType = ethernetType
+			break
+		}
+		index += 4
+	}
+	rcv.RemoteEndpoint.EthernetType = rcv.LocalEndpoint.EthernetType
+	// Save only payload (without header)
+	rcv.EtherPayloadBytes = p[index+2:]
+
+	var l4index int
+	switch rcv.LocalEndpoint.EthernetType {
+	case _ethernetTypeIPv4: //ipv4
+		rcv.RemoteIP = rcv.EtherPayloadBytes[12:16]
+		rcv.LocalIP = rcv.EtherPayloadBytes[16:20]
+		rcv.Protocol = rcv.EtherPayloadBytes[9]
+		l4index = 20 // NOTE: this means no supporting of any ipv4 options
+	case _ethernetTypeIPv6: //ipv6
+		rcv.Protocol = rcv.EtherPayloadBytes[6]
+		rcv.RemoteIP = rcv.EtherPayloadBytes[8:24]
+		rcv.LocalIP = rcv.EtherPayloadBytes[24:40]
+		l4index = 40 // NOTE: this means no supporting of any ipv6 options
+	}
+
+	switch rcv.Protocol {
+	case 17: // UDP
+		rcv.RemotePort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index : l4index+2])
+		rcv.LocalPort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index+2 : l4index+4])
+		rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+8:]
+	}
+
+	return rcv
+}
+
+func ParseEthernetType(framesData []byte) uint16 {
+	index := 12
+	for {
+		ethernetType := binary.BigEndian.Uint16(framesData[index : index+2])
+		// 0x88A8: Service VLAN tag
+		// 8x8100: 802.11q (VLAN)
+		if ethernetType != 0x8100 && ethernetType != 0x88a8 {
+			return ethernetType
+		}
+		index += 4
+	}
 }
