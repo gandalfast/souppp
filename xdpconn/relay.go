@@ -27,7 +27,7 @@ const (
 
 const (
 	// _minimumEthernetFrameSize is the minimum size of an Ethernet frame
-	_minimumEthernetFrameSize = 14
+	_minimumEthernetFrameSize = 18
 	// _defaultXDPChunkSize is the default size for XDP UMEM chunk
 	_defaultXDPChunkSize = 4096
 	// _defaultXDPUMEMNumOfTrunk is the default number of UMEM trunks

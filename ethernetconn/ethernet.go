@@ -131,8 +131,8 @@ func parseReceivedData(p []byte) *EthernetResponse {
 		index += 4
 	}
 	rcv.RemoteEndpoint.EthernetType = rcv.LocalEndpoint.EthernetType
-	// Save only payload (without header)
-	rcv.EtherPayloadBytes = p[index+2:]
+	// Save only payload (without header and fcs)
+	rcv.EtherPayloadBytes = p[index+2 : len(p)-4]
 
 	var l4index int
 	switch rcv.LocalEndpoint.EthernetType {
