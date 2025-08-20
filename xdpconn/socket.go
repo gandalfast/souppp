@@ -188,6 +188,9 @@ func (s *xdpSock) polling(timeout int, rx bool) (int, error) {
 	for errors.Is(err, unix.EINTR) {
 		_, err = unix.Poll(pollingFileDescriptor, timeout)
 	}
+	if err != nil {
+		return 0, err
+	}
 
 	if rx {
 		return s.sock.NumReceived(), nil
