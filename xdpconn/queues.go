@@ -1,24 +1,18 @@
 package xdpconn
 
-import "github.com/safchain/ethtool"
+import (
+	"errors"
+	"github.com/vishvananda/netlink"
+)
 
-// getInterfaceQueuesNumber uses ethtool to get number of combined queue of the interface, return 1 if failed to get the info
 func getInterfaceQueuesNumber(interfaceName string) (int, error) {
-	ethHandle, err := ethtool.NewEthtool()
+	link, err := netlink.LinkByName(interfaceName)
 	if err != nil {
 		return 0, err
 	}
-	defer ethHandle.Close()
-
-	chans, err := ethHandle.GetChannels(interfaceName)
-	if err != nil {
-		// Fallback to 1 queue if we are unable to obtain the count
-		return 1, nil
+	queues := min(link.Attrs().NumRxQueues, link.Attrs().NumTxQueues)
+	if queues < 1 {
+		return 0, errors.New("no queues found")
 	}
-
-	result := int(chans.CombinedCount)
-	if result <= 0 {
-		result = 1
-	}
-	return result, nil
+	return queues, nil
 }
