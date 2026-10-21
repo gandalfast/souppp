@@ -2,6 +2,7 @@ package ethernetconn
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 )
@@ -104,8 +105,13 @@ type PacketRelay interface {
 	Close() error
 }
 
-// parseReceivedData parse received ethernet pkt, p is a ethernet packet in byte slice,
-func parseReceivedData(p []byte) *EthernetResponse {
+// parseReceivedData parses a received Ethernet frame. It fails on a frame
+// cut short at any layer; a UDP packet cut inside its UDP header has no
+// transport payload.
+func parseReceivedData(p []byte) (*EthernetResponse, error) {
+	if len(p) < 14 {
+		return nil, fmt.Errorf("ethernet frame of %d bytes is shorter than its header", len(p))
+	}
 	rcv := &EthernetResponse{
 		EtherBytes: p,
 		LocalEndpoint: &L2Endpoint{
@@ -119,29 +125,29 @@ func parseReceivedData(p []byte) *EthernetResponse {
 	copy(rcv.LocalEndpoint.HwAddr, p[:6])    // dst mac
 	copy(rcv.RemoteEndpoint.HwAddr, p[6:12]) // src mac
 
-	index := 12
-	for {
-		ethernetType := binary.BigEndian.Uint16(p[index : index+2])
-		// 0x88A8: Service VLAN tag
-		// 8x8100: 802.11q (VLAN)
-		if ethernetType != 0x8100 && ethernetType != 0x88a8 {
-			rcv.LocalEndpoint.EthernetType = ethernetType
-			break
-		}
-		index += 4
+	index, ethernetType := ethernetTypeOffset(p)
+	if index < 0 {
+		return nil, errors.New("ethernet frame cut inside its VLAN tags")
 	}
-	rcv.RemoteEndpoint.EthernetType = rcv.LocalEndpoint.EthernetType
+	rcv.LocalEndpoint.EthernetType = ethernetType
+	rcv.RemoteEndpoint.EthernetType = ethernetType
 	// Save only payload (without header)
 	rcv.EtherPayloadBytes = p[index+2:]
 
 	var l4index int
-	switch rcv.LocalEndpoint.EthernetType {
+	switch ethernetType {
 	case _ethernetTypeIPv4: //ipv4
+		if len(rcv.EtherPayloadBytes) < 20 {
+			return nil, fmt.Errorf("IPv4 packet of %d bytes is shorter than its header", len(rcv.EtherPayloadBytes))
+		}
 		rcv.RemoteIP = rcv.EtherPayloadBytes[12:16]
 		rcv.LocalIP = rcv.EtherPayloadBytes[16:20]
 		rcv.Protocol = rcv.EtherPayloadBytes[9]
 		l4index = 20 // NOTE: this means no supporting of any ipv4 options
 	case _ethernetTypeIPv6: //ipv6
+		if len(rcv.EtherPayloadBytes) < 40 {
+			return nil, fmt.Errorf("IPv6 packet of %d bytes is shorter than its header", len(rcv.EtherPayloadBytes))
+		}
 		rcv.Protocol = rcv.EtherPayloadBytes[6]
 		rcv.RemoteIP = rcv.EtherPayloadBytes[8:24]
 		rcv.LocalIP = rcv.EtherPayloadBytes[24:40]
@@ -150,23 +156,34 @@ func parseReceivedData(p []byte) *EthernetResponse {
 
 	switch rcv.Protocol {
 	case 17: // UDP
-		rcv.RemotePort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index : l4index+2])
-		rcv.LocalPort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index+2 : l4index+4])
-		rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+8:]
+		if len(rcv.EtherPayloadBytes) >= l4index+8 {
+			rcv.RemotePort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index : l4index+2])
+			rcv.LocalPort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index+2 : l4index+4])
+			rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+8:]
+		}
 	}
 
-	return rcv
+	return rcv, nil
 }
 
-func ParseEthernetType(framesData []byte) uint16 {
-	index := 12
-	for {
+// ethernetTypeOffset returns the offset of a frame's innermost EtherType,
+// past any VLAN tags, and the type; the offset is -1 when the frame ends
+// inside its tags.
+func ethernetTypeOffset(framesData []byte) (int, uint16) {
+	for index := 12; index+2 <= len(framesData); index += 4 {
 		ethernetType := binary.BigEndian.Uint16(framesData[index : index+2])
 		// 0x88A8: Service VLAN tag
 		// 8x8100: 802.11q (VLAN)
 		if ethernetType != 0x8100 && ethernetType != 0x88a8 {
-			return ethernetType
+			return index, ethernetType
 		}
-		index += 4
 	}
+	return -1, 0
+}
+
+// ParseEthernetType returns a frame's innermost EtherType, past any VLAN
+// tags, or 0 when the frame ends before it.
+func ParseEthernetType(framesData []byte) uint16 {
+	_, ethernetType := ethernetTypeOffset(framesData)
+	return ethernetType
 }

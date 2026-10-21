@@ -163,6 +163,9 @@ func parsePacketIP(pkt []byte) (*ethernetconn.EthernetResponse, error) {
 		rcv.Protocol = rcv.EtherPayloadBytes[9]
 		l4index = 20 //NOTE: this means no supporting of any ipv4 options
 	case 6: // IPv6
+		if len(pkt) < 40 {
+			return nil, fmt.Errorf("IPv6 packet of %d bytes is shorter than its header", len(pkt))
+		}
 		rcv.Protocol = rcv.EtherPayloadBytes[6]
 		rcv.RemoteIP = rcv.EtherPayloadBytes[8:24]
 		rcv.LocalIP = rcv.EtherPayloadBytes[24:40]
@@ -173,10 +176,16 @@ func parsePacketIP(pkt []byte) (*ethernetconn.EthernetResponse, error) {
 
 	switch rcv.Protocol {
 	case 17: // UDP
+		if len(pkt) < l4index+8 {
+			return nil, fmt.Errorf("UDP packet of %d bytes is shorter than its headers", len(pkt))
+		}
 		rcv.RemotePort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index : l4index+2])
 		rcv.LocalPort = binary.BigEndian.Uint16(rcv.EtherPayloadBytes[l4index+2 : l4index+4])
 		rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+8:]
 	case 58: // ICMPv6
+		if len(pkt) < l4index+4 {
+			return nil, fmt.Errorf("ICMPv6 packet of %d bytes is shorter than its headers", len(pkt))
+		}
 		rcv.RemotePort = uint16(rcv.EtherPayloadBytes[l4index])
 		rcv.LocalPort = rcv.RemotePort
 		rcv.TransportPayloadBytes = rcv.EtherPayloadBytes[l4index+4:]

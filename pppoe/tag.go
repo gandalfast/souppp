@@ -27,6 +27,9 @@ func (eol TagEndOfList) Serialize() ([]byte, error) {
 }
 
 func (eol TagEndOfList) Parse(buf []byte) (int, error) {
+	if len(buf) < 4 {
+		return 0, fmt.Errorf("failed to parse %v, %d bytes is less than a tag header", TagTypeEndOfList.String(), len(buf))
+	}
 	if binary.BigEndian.Uint16(buf[:2]) != 0 {
 		return 0, fmt.Errorf("failed to parse %v, type is not %d", TagTypeEndOfList.String(), TagTypeEndOfList)
 	}
@@ -58,9 +61,16 @@ func (bslice *TagByteSlice) Serialize() ([]byte, error) {
 }
 
 func (bslice *TagByteSlice) Parse(buf []byte) (int, error) {
+	if len(buf) < 4 {
+		return 0, fmt.Errorf("failed to parse tag, %d bytes is less than a tag header", len(buf))
+	}
 	bslice.TagType = TagType(binary.BigEndian.Uint16(buf[:2]))
-	bslice.Value = buf[4 : binary.BigEndian.Uint16(buf[2:4])+4]
-	return 4 + len(bslice.Value), nil
+	valueLen := int(binary.BigEndian.Uint16(buf[2:4]))
+	if 4+valueLen > len(buf) {
+		return 0, fmt.Errorf("failed to parse %v, value length %d exceeds the %d bytes left", bslice.TagType, valueLen, len(buf)-4)
+	}
+	bslice.Value = buf[4 : 4+valueLen]
+	return 4 + valueLen, nil
 }
 
 func (bslice *TagByteSlice) Type() uint16 {
@@ -99,27 +109,30 @@ func (bbf *BBFTag) Parse(buf []byte) (int, error) {
 	if tagLen < 4 {
 		return 0, fmt.Errorf("invalid BBF tag length")
 	}
+	end := 4 + int(tagLen)
+	if end > len(buf) {
+		return 0, fmt.Errorf("invalid BBF tag, length %d exceeds the %d bytes left", tagLen, len(buf)-4)
+	}
 
-	offset := 8
-	for i := 0; i < _maxTags; i++ {
+	// The sub-tags, each with a 2-byte header, fill the tag after its
+	// vendor id.
+	bbf.tags = nil
+	for offset := 8; offset < end; {
+		if len(bbf.tags) == _maxTags {
+			return 0, fmt.Errorf("invalid BBF tag, exceed max number of subtags: %d", _maxTags)
+		}
+		if end-offset < 2 {
+			return 0, fmt.Errorf("invalid BBF tag, subtag header cut at %d bytes", end-offset)
+		}
 		subTag := createBBFSubTag(BBFSubTagNum(buf[offset]))
-		n, err := subTag.Parse(buf[offset:])
+		n, err := subTag.Parse(buf[offset:end])
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse BBF subtag,%w", err)
 		}
 		offset += n
 		bbf.tags = append(bbf.tags, subTag)
-		if offset >= len(buf) {
-			// Finished tag parsing
-			break
-		}
-
-		// Reached maximum tags but there are others to parse
-		if i == _maxTags-1 {
-			return 0, fmt.Errorf("invalid BBF tag, exceed max number of subtags: %d", _maxTags)
-		}
 	}
-	return int(tagLen) + 4, nil
+	return end, nil
 }
 
 func (bbf *BBFTag) Serialize() ([]byte, error) {
@@ -168,6 +181,9 @@ func (num *BBFSubTagUint32) Serialize() ([]byte, error) {
 }
 
 func (num *BBFSubTagUint32) Parse(buf []byte) (int, error) {
+	if len(buf) < 6 || buf[1] != 4 {
+		return 0, fmt.Errorf("invalid BBF numeric subtag, want 4 value bytes in %d", len(buf))
+	}
 	num.TagType = BBFSubTagNum(buf[0])
 	num.Value = binary.BigEndian.Uint32(buf[2:6])
 	return 6, nil
@@ -198,9 +214,16 @@ func (bslice *BBFSubTagByteSlice) Serialize() ([]byte, error) {
 }
 
 func (bslice *BBFSubTagByteSlice) Parse(buf []byte) (int, error) {
+	if len(buf) < 2 {
+		return 0, fmt.Errorf("invalid BBF subtag, %d bytes is less than a subtag header", len(buf))
+	}
+	valueLen := int(buf[1])
+	if 2+valueLen > len(buf) {
+		return 0, fmt.Errorf("invalid BBF subtag, value length %d exceeds the %d bytes left", valueLen, len(buf)-2)
+	}
 	bslice.TagType = BBFSubTagNum(buf[0])
-	bslice.Value = buf[2 : buf[1]+2]
-	return 2 + len(bslice.Value), nil
+	bslice.Value = buf[2 : 2+valueLen]
+	return 2 + valueLen, nil
 }
 
 func (bslice *BBFSubTagByteSlice) Type() uint16 {

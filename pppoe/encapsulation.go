@@ -34,7 +34,12 @@ func (pkt *Packet) Parse(buf []byte) error {
 	pkt.Code = Code(buf[1])
 	pkt.SessionID = binary.BigEndian.Uint16(buf[2:4])
 	pkt.Len = binary.BigEndian.Uint16(buf[4:6])
+	if int(pkt.Len) > len(buf)-6 {
+		return fmt.Errorf("invalid PPPoE packet, length field %d exceeds the %d payload bytes", pkt.Len, len(buf)-6)
+	}
 	payload := buf[6 : 6+pkt.Len]
+	pkt.Payload = nil
+	pkt.Tags = nil
 
 	if pkt.Code == CodeSession {
 		// no parsing of tag for session pkt
@@ -42,8 +47,15 @@ func (pkt *Packet) Parse(buf []byte) error {
 		return nil
 	}
 
-	offset := 0
-	for i := 0; i < _maxTags; i++ {
+	// A discovery packet carries tags, each with a 4-byte header; a PADT
+	// may carry none.
+	for offset := 0; offset < len(payload); {
+		if len(pkt.Tags) == _maxTags {
+			return fmt.Errorf("invalid PPPoE packet, exceeded max number of tags: %d", _maxTags)
+		}
+		if len(payload)-offset < 4 {
+			return fmt.Errorf("invalid PPPoE packet, tag header cut at %d bytes", len(payload)-offset)
+		}
 		tag := createTag(TagType(binary.BigEndian.Uint16(payload[offset : offset+2])))
 		n, err := tag.Parse(payload[offset:])
 		if err != nil {
@@ -51,15 +63,6 @@ func (pkt *Packet) Parse(buf []byte) error {
 		}
 		offset += n
 		pkt.Tags = append(pkt.Tags, tag)
-		if offset >= len(payload) {
-			// Finished tag parsing
-			break
-		}
-
-		// Reached maximum tags but there are others to parse
-		if i == _maxTags-1 {
-			return fmt.Errorf("invalid PPPoE packet, exceeded max number of tags: %d", _maxTags)
-		}
 	}
 	return nil
 }
