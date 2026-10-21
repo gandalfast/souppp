@@ -163,14 +163,15 @@ type LCP struct {
 	PeerRule    PeerOptionRule // Handle peer's options
 	layerNotify LayerNotifyHandler
 
-	requestID      atomic.Uint32
-	state          atomic.Uint32
-	restartCount   atomic.Uint32
-	restartTimer   *time.Timer
-	keepAliveTimer *time.Timer
-	sendChan       chan []byte
-	receiveChan    chan []byte
-	closed         chan struct{}
+	requestID         atomic.Uint32
+	state             atomic.Uint32
+	restartCount      atomic.Uint32
+	restartTimer      *time.Timer
+	restartTimeout    time.Duration
+	keepAliveInterval time.Duration
+	sendChan          chan []byte
+	receiveChan       chan []byte
+	closed            chan struct{}
 }
 
 const (
@@ -195,8 +196,12 @@ func NewLCP(proto ppp.ProtocolNumber, pppProto *ppp.PPP, h LayerNotifyHandler, p
 	lcp.layerNotify = h
 	lcp.state.Store(uint32(StateInitial))
 	lcp.restartCount.Store(_defaultRestartCounter)
-	lcp.restartTimer = time.NewTimer(_defaultRestartTimerDuration)
-	lcp.keepAliveTimer = time.NewTimer(_defaultKeepAliveInterval)
+	lcp.restartTimeout = _defaultRestartTimerDuration
+	lcp.keepAliveInterval = _defaultKeepAliveInterval
+	// The restart timer runs only while a request is outstanding; it is
+	// armed by the actions that send one.
+	lcp.restartTimer = time.NewTimer(lcp.restartTimeout)
+	lcp.restartTimer.Stop()
 	lcp.sendChan, lcp.receiveChan = lcp.proto.Register(lcp.protoType)
 	lcp.closed = make(chan struct{})
 	return lcp
@@ -205,46 +210,42 @@ func NewLCP(proto ppp.ProtocolNumber, pppProto *ppp.PPP, h LayerNotifyHandler, p
 func (lcp *LCP) Start(ctx context.Context) {
 	go lcp.receive()
 
-	// Keep alive handler
+	// Keepalive: while opened, send an Echo-Request every interval. The
+	// restart counter and timer then cover its retransmission, so a peer
+	// that stops answering is detected like one that never answered a
+	// Configure-Request.
 	if lcp.protoType == ppp.ProtoLCP {
 		go func() {
-			ticker := time.NewTicker(_defaultKeepAliveInterval)
+			ticker := time.NewTicker(lcp.keepAliveInterval)
 			defer ticker.Stop()
-
-			select {
-			case <-ticker.C:
-				switch lcp.getState() {
-				case StateOpened:
-					if err := lcp.sendEchoRequest(); err != nil {
-						lcp.logger.Error().Err(err).Msg("keepAliveTimeout")
-					} else {
-						lcp.setState(StateEchoReqSent, "keepAliveTimeout")
+			for {
+				select {
+				case <-ticker.C:
+					if lcp.getState() != StateOpened {
+						continue
 					}
-				default:
-				}
-			case _, ok := <-lcp.closed:
-				if !ok {
+					lcp.restartCount.Store(_defaultRestartCounter)
+					if err := lcp.sendEchoRequest(); err != nil {
+						lcp.logger.Error().Err(err).Msg("failed to send keepalive")
+					} else {
+						lcp.setState(StateEchoReqSent, "keepAlive")
+					}
+				case <-lcp.closed:
 					return
 				}
 			}
 		}()
 	}
 
-	// Timer handler (triggered if AC didn't respond to a request packet)
+	// Restart timer: a request the peer did not answer in time is
+	// retransmitted while the restart counter is positive (TO+) and given
+	// up when it reaches zero (TO-), as in RFC 1661 section 4.6.
 	go func() {
-		select {
-		case <-lcp.restartTimer.C:
-			counter := lcp.restartCount.Add(^uint32(0))
-			if counter == 0 {
-				if lcp.getState() == StateEchoReqSent {
-					lcp.logger.Error().Msg("keepalive timeout")
-				}
-				lcp.toMinus()
-			} else {
-				lcp.toPlus()
-			}
-		case _, ok := <-lcp.closed:
-			if !ok {
+		for {
+			select {
+			case <-lcp.restartTimer.C:
+				lcp.timeout()
+			case <-lcp.closed:
 				return
 			}
 		}
@@ -254,24 +255,44 @@ func (lcp *LCP) Start(ctx context.Context) {
 func (lcp *LCP) Close() error {
 	lcp.proto.Unregister(lcp.protoType)
 	close(lcp.closed)
+	lcp.restartTimer.Stop()
 	return nil
+}
+
+// timeout handles an expiry of the restart timer.
+func (lcp *LCP) timeout() {
+	if lcp.restartCount.Load() == 0 || lcp.restartCount.Add(^uint32(0)) == 0 {
+		if lcp.getState() == StateEchoReqSent {
+			lcp.logger.Error().Msg("keepalive timeout")
+		}
+		lcp.toMinus()
+		return
+	}
+	lcp.toPlus()
 }
 
 func (lcp *LCP) setState(s State, caller string) {
 	old := lcp.state.Swap(uint32(s))
 	lcp.logger.Debug().Msgf("%v state transit %v -> %v", caller, State(old), s)
+	switch s {
+	case StateInitial, StateStarting, StateClosed, StateStopped, StateOpened:
+		// No request is outstanding in these states (RFC 1661 section
+		// 4.1): stop the restart timer so it does not expire into them.
+		lcp.restartTimer.Stop()
+	}
 }
 
 func (lcp *LCP) getState() State {
 	return State(lcp.state.Load())
 }
 
+// resetTimer arms the restart timer for a request just sent. Reset on
+// its own is safe: since Go 1.23 a receive from the channel after Reset
+// never yields a value from the previous setting, and draining it here
+// would block forever when the timer goroutine took the value first.
 func (lcp *LCP) resetTimer() {
 	lcp.logger.Debug().Msg("reset timer")
-	if !lcp.restartTimer.Stop() {
-		<-lcp.restartTimer.C
-	}
-	lcp.restartTimer.Reset(_defaultRestartTimerDuration)
+	lcp.restartTimer.Reset(lcp.restartTimeout)
 }
 
 func (lcp *LCP) send(p []byte) error {
