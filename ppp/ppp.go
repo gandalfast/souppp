@@ -90,14 +90,22 @@ func (ppp *PPP) Unregister(p ProtocolNumber) {
 
 func (ppp *PPP) Close() error {
 	err := ppp.conn.Close()
-	ppp.relayChanListLock.Lock()
-	for _, ch := range ppp.relayChanList {
-		close(ch)
-	}
-	ppp.relayChanListLock.Unlock()
+	ppp.closeReceivers()
 	close(ppp.closed)
 	close(ppp.sendChan)
 	return err
+}
+
+// closeReceivers closes and forgets every registered protocol's receive
+// channel, telling the protocols that the lower layer is gone. It is safe
+// to call more than once.
+func (ppp *PPP) closeReceivers() {
+	ppp.relayChanListLock.Lock()
+	for p, ch := range ppp.relayChanList {
+		close(ch)
+		delete(ppp.relayChanList, p)
+	}
+	ppp.relayChanListLock.Unlock()
 }
 
 func (ppp *PPP) send() {
@@ -136,8 +144,10 @@ func (ppp *PPP) receive() {
 		n, _, err := ppp.conn.ReadFrom(buf)
 
 		if err != nil && !errors.Is(err, ethernetconn.ErrTimeOut) {
-			// Close the routine if there is an unrecoverable error
+			// The transport is gone for good: stop, and let every
+			// protocol know by closing its receive channel.
 			ppp.Logger.Error().Err(err).Msg("failed to receive packet")
+			ppp.closeReceivers()
 			return
 		} else if err != nil {
 			// Skip this packet and go to the next if there is a timeout

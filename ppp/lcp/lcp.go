@@ -253,8 +253,10 @@ func (lcp *LCP) Start(ctx context.Context) {
 }
 
 func (lcp *LCP) Close() error {
-	lcp.proto.Unregister(lcp.protoType)
+	// Mark the close before unregistering, so that the receive loop does
+	// not take its own closed channel for the lower layer going away.
 	close(lcp.closed)
+	lcp.proto.Unregister(lcp.protoType)
 	lcp.restartTimer.Stop()
 	return nil
 }
@@ -309,7 +311,17 @@ func (lcp *LCP) receive() {
 		select {
 		case pktbytes, ok := <-lcp.receiveChan:
 			if !ok {
-				lcp.logger.Info().Msg("receive channel closed")
+				select {
+				case <-lcp.closed:
+					// Our own Close unregistered the protocol.
+				default:
+					// PPP closed the channel: the lower layer is gone
+					// (RFC 1661, section 4.4, Down event).
+					lcp.logger.Info().Msg("lower layer closed")
+					if err := lcp.DownEvent(); err != nil {
+						lcp.logger.Error().Err(err).Msg("failed to process Down event")
+					}
+				}
 				return
 			}
 			lcp.processReceivedBytes(pktbytes)
