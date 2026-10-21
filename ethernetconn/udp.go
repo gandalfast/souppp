@@ -160,7 +160,14 @@ func (ruc *RUDPConn) buildPacket(p []byte, src, dst *net.UDPAddr) ([]byte, net.I
 		copy(ipv6header[24:40], dst.IP.To16()[:16])                                // dst addr
 
 		udpAndPayload := append(udpHeader, p...)
-		binary.BigEndian.PutUint16(udpAndPayload[6:], v6udpChecksum(udpAndPayload, src, dst)) // udp checksum
+		csum := v6udpChecksum(udpAndPayload, src, dst)
+		if csum == 0 {
+			// Over IPv6 a zero checksum means none was computed and the
+			// packet is discarded; a computed zero is sent as all ones
+			// (RFC 8200, section 8.1).
+			csum = 0xffff
+		}
+		binary.BigEndian.PutUint16(udpAndPayload[6:], csum) // udp checksum
 
 		return append(ipv6header, udpAndPayload...), dst.IP
 	}
