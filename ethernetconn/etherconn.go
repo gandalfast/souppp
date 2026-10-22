@@ -191,14 +191,20 @@ func (ec *EtherConn) getReceivedData() (*EthernetResponse, error) {
 		defer cancel()
 	}
 
-	var received *EthernetResponse
-	select {
-	case <-ctx.Done():
-		return nil, ErrTimeOut
-	case receivedData := <-ec.recvChan:
-		received = parseReceivedData(receivedData)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ErrTimeOut
+		case receivedData := <-ec.recvChan:
+			received, err := parseReceivedData(receivedData)
+			if err != nil {
+				// A frame cut short is dropped, as a NIC drops a runt;
+				// it is not a reason to end the connection.
+				continue
+			}
+			return received, nil
+		}
 	}
-	return received, nil
 }
 
 func buildEthernetHeader(srcMac, destMac net.HardwareAddr, ethernetType uint16) []byte {

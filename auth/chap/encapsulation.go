@@ -27,11 +27,13 @@ func (cp *Packet) Parse(buf []byte) error {
 	cp.ID = buf[1]
 	cp.Len = binary.BigEndian.Uint16(buf[2:4])
 
-	if cp.Len < 4 {
+	// The length field covers the header; it cannot exceed the bytes read.
+	if cp.Len < 4 || int(cp.Len) > len(buf) {
 		return InvalidPacketLengthError{
 			length: int(cp.Len),
 		}
 	}
+	buf = buf[:cp.Len]
 
 	switch cp.Code {
 	case CodeChallenge, CodeResponse:
@@ -40,16 +42,17 @@ func (cp *Packet) Parse(buf []byte) error {
 				length: int(cp.Len),
 			}
 		}
+		// The value follows its 1-byte size; the name fills the rest.
 		cp.ValLen = buf[4]
-		if cp.Len < uint16(4+cp.ValLen) {
+		if int(cp.Len) < 5+int(cp.ValLen) {
 			return InvalidChallengeLengthError{
 				length: int(cp.ValLen),
 			}
 		}
 		cp.Value = buf[5 : 5+cp.ValLen]
-		cp.Name = buf[5+cp.ValLen : cp.Len]
+		cp.Name = buf[5+cp.ValLen:]
 	default:
-		cp.Msg = buf[4:cp.Len]
+		cp.Msg = buf[4:]
 	}
 
 	return nil

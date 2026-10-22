@@ -24,32 +24,55 @@ func (pp *Packet) Parse(buf []byte) error {
 	pp.ID = buf[1]
 	pp.Len = binary.BigEndian.Uint16(buf[2:4])
 
+	// The length field covers the header; it cannot exceed the bytes read.
+	if pp.Len < 4 || int(pp.Len) > len(buf) {
+		return InvalidPacketLengthError{
+			length: int(pp.Len),
+		}
+	}
+	buf = buf[:pp.Len]
+
 	switch pp.Code {
 	case CodeAuthRequest:
+		// Peer id and password each follow their 1-byte size.
 		if pp.Len < 6 {
 			return InvalidAuthLengthError{
 				length: int(pp.Len),
 			}
 		}
-		if buf[4] == 0 || buf[4] > 249 {
+		peerIDLen := int(buf[4])
+		if peerIDLen == 0 || peerIDLen > 249 {
 			return InvalidPeerIDLengthError{
-				length: int(buf[4]),
+				length: peerIDLen,
 			}
 		}
-		pp.PeerID = buf[5 : 5+buf[4]]
-		if buf[5+buf[4]] == 0 || buf[5+buf[4]] > 249 {
+		if 5+peerIDLen+1 > len(buf) {
+			return InvalidAuthLengthError{
+				length: len(buf),
+			}
+		}
+		pp.PeerID = buf[5 : 5+peerIDLen]
+		passwordLen := int(buf[5+peerIDLen])
+		if passwordLen == 0 || passwordLen > 249 || 6+peerIDLen+passwordLen > len(buf) {
 			return InvalidPasswordLengthError{
-				length: int(buf[5+buf[4]]),
+				length: passwordLen,
 			}
 		}
-		pp.Password = buf[6+buf[4]:]
+		pp.Password = buf[6+peerIDLen : 6+peerIDLen+passwordLen]
 	default:
-		if buf[4] > 250 {
+		// The message follows its 1-byte size.
+		if len(buf) < 5 {
 			return InvalidMessageLengthError{
-				length: int(buf[4]),
+				length: len(buf) - 4,
 			}
 		}
-		pp.Msg = buf[5:]
+		msgLen := int(buf[4])
+		if msgLen > 250 || 5+msgLen > len(buf) {
+			return InvalidMessageLengthError{
+				length: msgLen,
+			}
+		}
+		pp.Msg = buf[5 : 5+msgLen]
 	}
 
 	return nil

@@ -40,7 +40,7 @@ func (mru *OpMRU) Serialize() ([]byte, error) {
 }
 
 func (mru *OpMRU) Parse(buf []byte) (int, error) {
-	if buf[0] != byte(OpTypeMaximumReceiveUnit) || buf[1] != 4 {
+	if len(buf) < 4 || buf[0] != byte(OpTypeMaximumReceiveUnit) || buf[1] != 4 {
 		return 0, fmt.Errorf("not a valid %v option", OpTypeMaximumReceiveUnit)
 	}
 	*mru = OpMRU(binary.BigEndian.Uint16(buf[2:4]))
@@ -128,15 +128,20 @@ func (auth *OpAuthProto) Parse(buf []byte) (int, error) {
 		return 0, fmt.Errorf("not a valid %v option", OpTypeAuthenticationProtocol)
 	}
 
+	optionLen := int(buf[1])
+	if optionLen < 4 || optionLen > len(buf) {
+		return 0, fmt.Errorf("invalid %v option length %d for %d bytes", OpTypeAuthenticationProtocol, optionLen, len(buf))
+	}
+
 	auth.Proto = ppp.ProtocolNumber(binary.BigEndian.Uint16(buf[2:4]))
-	if buf[1] > 4 && auth.Proto == ppp.ProtoCHAP {
+	if optionLen > 4 && auth.Proto == ppp.ProtoCHAP {
 		auth.CHAPAlg = CHAPAuthAlg(buf[4])
 	} else {
 		auth.CHAPAlg = AlgNone
 	}
 
-	auth.Payload = buf[4:buf[1]]
-	return int(buf[1]), nil
+	auth.Payload = buf[4:optionLen]
+	return optionLen, nil
 }
 
 func (auth *OpAuthProto) GetPayload() []byte {
@@ -183,7 +188,7 @@ func (mn *OpMagicNum) Serialize() ([]byte, error) {
 }
 
 func (mn *OpMagicNum) Parse(buf []byte) (int, error) {
-	if buf[0] != byte(OpTypeMagicNumber) || buf[1] != 6 {
+	if len(buf) < 6 || buf[0] != byte(OpTypeMagicNumber) || buf[1] != 6 {
 		return 0, fmt.Errorf("not a valid %v option", OpTypeMagicNumber)
 	}
 	*mn = OpMagicNum(binary.BigEndian.Uint32(buf[2:6]))
@@ -234,7 +239,7 @@ func (gop *GenericOption) Parse(buf []byte) (int, error) {
 	if len(buf) < 2 {
 		return 0, errors.New("not enough bytes")
 	}
-	if buf[1] < 2 {
+	if buf[1] < 2 || int(buf[1]) > len(buf) {
 		return 0, errors.New("invalid length field")
 	}
 	gop.Code = buf[0]

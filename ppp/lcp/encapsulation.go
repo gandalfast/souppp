@@ -72,44 +72,39 @@ func (p *Packet) Parse(buf []byte) error {
 	p.Code = MsgCode(buf[0])
 	p.ID = buf[1]
 	p.Len = binary.BigEndian.Uint16(buf[2:4])
+	if p.Len < 4 || int(p.Len) > len(buf) {
+		return fmt.Errorf("invalid PPP packet, length field %d for %d bytes", p.Len, len(buf))
+	}
 	p.Payload = buf[4:p.Len]
+	p.Options = nil
 
 	switch p.Code {
 	case CodeConfigureRequest, CodeConfigureAck, CodeConfigureNak, CodeConfigureReject:
-		if len(p.Payload) == 0 {
-			return nil
-		}
-
-		offset := 0
-		for i := 0; i < _maxOptions; i++ {
-			op := createOption(p.Proto, p.Payload[offset])
-			if op == nil {
-				break
-			}
-			n, err := op.Parse(p.Payload[offset:])
-			if err != nil {
-				return fmt.Errorf("failed to parse LCP option #%d %v, %w", i+1, OptionType(p.Payload[offset]), err)
-			}
-			p.Options = append(p.Options, op)
-
-			offset += n
-			if offset >= len(p.Payload) {
-				break
-			}
-
-			if i == _maxOptions-1 {
+		// Options fill the payload, each with a 2-byte header.
+		for offset := 0; offset < len(p.Payload); {
+			if len(p.Options) == _maxOptions {
 				return fmt.Errorf("invalid LCP packet, exceeded max number of options: %d", _maxOptions)
 			}
+			if len(p.Payload)-offset < 2 {
+				return fmt.Errorf("invalid LCP packet, option header cut at %d bytes", len(p.Payload)-offset)
+			}
+			op := createOption(p.Proto, p.Payload[offset])
+			n, err := op.Parse(p.Payload[offset:])
+			if err != nil {
+				return fmt.Errorf("failed to parse LCP option #%d %v, %w", len(p.Options)+1, OptionType(p.Payload[offset]), err)
+			}
+			p.Options = append(p.Options, op)
+			offset += n
 		}
 	case CodeEchoRequest, CodeEchoReply, CodeDiscardRequest:
-		if len(buf) < 8 {
+		if p.Len < 8 {
 			return fmt.Errorf("not enough bytes for a LCP echo pkt, %v", buf)
 		}
 		p.MagicNum = binary.BigEndian.Uint32(buf[4:8])
-		p.Payload = buf[8:]
+		p.Payload = buf[8:p.Len]
 	case CodeTerminateAck, CodeTerminateRequest, CodeCodeReject:
 	case CodeProtocolReject:
-		if len(buf) < 6 {
+		if p.Len < 6 {
 			return fmt.Errorf("not enough bytes for a LCP protocol reject pkt, %v", buf)
 		}
 		p.RejectedProto = ppp.ProtocolNumber(binary.BigEndian.Uint16(buf[4:6]))
