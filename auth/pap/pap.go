@@ -49,7 +49,8 @@ func (pap *PAP) getResponse(ctx context.Context, req Packet) (resp Packet, err e
 			}
 
 			pap.sendChan <- pppData
-			pap.logger.Debug().Any("req", req).Msg("sent PAP auth request")
+			// The request carries the password; log its identity only.
+			pap.logger.Debug().Uint8("id", req.ID).Bytes("peer", req.PeerID).Msg("sent PAP auth request")
 		}
 
 		// Parse response

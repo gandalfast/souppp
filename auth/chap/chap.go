@@ -106,7 +106,8 @@ func (chap *CHAP) AuthSelf(ctx context.Context, username, password string) error
 
 	toBuf := append([]byte{challenge.ID}, []byte(password)...)
 	toBuf = append(toBuf, challenge.Value...)
-	chap.logger.Debug().Msgf("hashing id %x, passwd %s,challege %x", challenge.ID, password, challenge.Value)
+	// The password is a secret and must not reach the logs.
+	chap.logger.Debug().Uint8("id", challenge.ID).Hex("challenge", challenge.Value).Msg("hashing CHAP challenge")
 	h := md5.New()
 	h.Write(toBuf)
 	resp.Value = h.Sum(nil)
