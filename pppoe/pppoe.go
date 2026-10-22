@@ -13,11 +13,17 @@ import (
 	"time"
 )
 
+// ErrSessionTerminated is returned by ReadFrom once the access concentrator
+// has terminated the session with a PADT, and by every read after that.
+var ErrSessionTerminated = errors.New("pppoe: session terminated by the access concentrator")
+
 // PPPoE represents the PPPoE protocol.
 type PPPoE struct {
 	logger *zerolog.Logger
 	conn   *ethernetconn.EtherConn
 	state  uint32
+	// terminated is set when the access concentrator ended the session.
+	terminated atomic.Bool
 
 	// Configurable parameters
 	serviceName string
@@ -165,8 +171,14 @@ func (pppoe *PPPoE) WriteTo(p []byte, _ net.Addr) (n int, err error) {
 
 // ReadFrom only works after PPPoE session is open.
 // It reads packet data into buf and return the number of written bytes.
+// It returns ErrSessionTerminated when the access concentrator terminates
+// the session with a PADT, and on every read after that.
 func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 	for {
+		if pppoe.terminated.Load() {
+			return 0, nil, ErrSessionTerminated
+		}
+
 		n, l2ep, err := pppoe.conn.ReadPacketFrom(buf)
 		if err != nil {
 			return 0, nil, fmt.Errorf("failed to recv, %w", err)
@@ -174,11 +186,23 @@ func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 
 		// 1. Check that the packet reaches the minimum PPPoE header length
 		// 2. MAC Address must match the one for the current session
-		// 3. The PPPoE packet must have the session type code
-		// 4. Session ID must match the current one
+		// 3. Session ID must match the current one
 		if n < 6 || l2ep.HwAddr.String() != pppoe.acMAC.String() ||
-			Code(buf[1]) != CodeSession ||
 			binary.BigEndian.Uint16(buf[2:4]) != pppoe.sessionID {
+			continue
+		}
+
+		// 4. A PADT for this session ends it (RFC 2516, section 5.5): no
+		// reply is sent, and nothing is read from it any more. Only a
+		// session packet is data; other discovery packets are not ours.
+		switch {
+		case l2ep.EthernetType == EtherTypePPPoEDiscovery && Code(buf[1]) == CodePADT:
+			pppoe.logger.Info().Msg("session terminated by the access concentrator (PADT)")
+			pppoe.terminated.Store(true)
+			atomic.StoreUint32(&pppoe.state, pppoeStateClosed)
+			return 0, nil, ErrSessionTerminated
+		case l2ep.EthernetType == EtherTypePPPoESession && Code(buf[1]) == CodeSession:
+		default:
 			continue
 		}
 
