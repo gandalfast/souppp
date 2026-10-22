@@ -76,16 +76,14 @@ func (shared *SharedRUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 // to obtain next hop's MAC address, and use underlying EtherConn to send IP packet,
 // with EtherConn's Ethernet encapsulation.
 func (shared *SharedRUDPConn) WriteTo(p []byte, addr net.Addr) (int, error) {
-	srcAddr, ok := addr.(*net.UDPAddr)
-	if !ok {
-		return 0, errors.New("invalid source address")
-	}
 	destAddr, ok := addr.(*net.UDPAddr)
 	if !ok {
 		return 0, errors.New("invalid destination address")
 	}
 
-	buf, destIP := shared.udpConn.buildPacket(p, srcAddr, destAddr)
+	// The source is this connection's own address: it is what the UDP
+	// source port and the checksum's pseudo-header must carry.
+	buf, destIP := shared.udpConn.buildPacket(p, shared.udpConn.localAddress, destAddr)
 	nextHopMAC := shared.udpConn.resolveNextHopFunc(destIP)
 	if _, err := shared.conn.WriteIPPktTo(buf, nextHopMAC); err != nil {
 		return 0, err
