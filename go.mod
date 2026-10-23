@@ -6,7 +6,7 @@ require (
 	github.com/asavie/xdp v0.3.4-0.20240826152323-67e5ba17320c
 	github.com/cilium/ebpf v0.22.0
 	github.com/insomniacslk/dhcp v0.0.0-20250919081422-f80a1952f48e
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.1
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/sys v0.43.0
